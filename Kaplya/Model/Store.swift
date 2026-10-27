@@ -152,6 +152,7 @@ final class Store {
         }
 
         let internalFound = linkInternalTransfers()
+        applyCreditCards()
         transactions.sort { $0.date > $1.date }
         let record = ImportRecord(id: importID, date: Date(), fileName: fileName, bank: parsed.bank,
                                   added: added, duplicates: duplicates, internalFound: internalFound)
@@ -305,8 +306,9 @@ final class Store {
         debts.append(Debt(kind: .creditCard, title: "Кредитная карта", lender: "Т-Банк",
                           principal: 150_000, balance: 42_300, monthlyPayment: 2_100, rate: 29.9,
                           nextPayment: cal.date(byAdding: .day, value: 12, to: Date()) ?? Date(),
-                          graceEnds: cal.date(byAdding: .day, value: 18, to: Date())))
+                          graceEnds: cal.date(byAdding: .day, value: 18, to: Date()), cardDigits: "7788"))
         debts.sort { $0.upcomingPayment() < $1.upcomingPayment() }
+        applyCreditCards()
         let plan = suggestedPlan()
         limits = plan.limits
         incomePlan.savings = plan.savings

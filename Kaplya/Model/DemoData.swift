@@ -31,11 +31,11 @@ enum DemoData {
         }
 
         func add(_ bank: Bank, _ month: Date, _ day: Int, _ amount: Decimal, _ title: String,
-                 category: String = "", mcc: String = "", hour: Int? = nil) {
+                 category: String = "", mcc: String = "", hour: Int? = nil, card: String? = nil) {
             let h = hour ?? rng.int(8...22)
             guard let d = date(month, day, h, rng.int(0...59)) else { return }
             rows.append((bank, ParsedRow(date: d, amount: amount,
-                                         card: bank == .tbank ? "*4417" : "****2058",
+                                         card: card ?? (bank == .tbank ? "*4417" : "****2058"),
                                          title: title, bankCategory: category, mcc: mcc)))
         }
 
@@ -123,6 +123,12 @@ enum DemoData {
             }
             add(.sber, month, 28, -5_000, "Погашение кредита по договору", category: "Прочие операции")
             add(.tbank, month, 10, -10_000, "Перевод в Копилку", category: "Финансы")
+            // Кредитная карта *7788: покупки по ней и погашение с дебетовой карты
+            add(.tbank, month, 6, -Decimal(rng.int(2500...6000)), "OZON", category: "Различные товары", mcc: "5399", card: "*7788")
+            add(.tbank, month, 14, -Decimal(rng.int(1500...3500)), "Ресторан Хачапури и вино", category: "Рестораны", mcc: "5812", card: "*7788")
+            add(.tbank, month, 21, -Decimal(rng.int(800...2000)), "ПЯТЕРОЧКА", category: "Супермаркеты", mcc: "5411", card: "*7788")
+            add(.tbank, month, 25, -8_000, "Внутренний перевод на карту *7788", category: "Переводы", hour: 12)
+            add(.tbank, month, 25, 8_000, "Пополнение. Внутренний перевод", category: "Пополнения", hour: 12, card: "*7788")
         }
 
         var occurrences: [String: Int] = [:]

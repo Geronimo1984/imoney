@@ -58,6 +58,14 @@ struct Debt: Codable, Identifiable, Hashable {
     var match: String = ""
     /// Кредитная карта: до какого дня длится льготный период (без процентов).
     var graceEnds: Date? = nil
+    /// Кредитная карта: последние 4 цифры или номер договора — по ним находим её операции в выписках.
+    var cardDigits: String? = nil
+
+    /// Только цифры из поля «последние 4 цифры или номер договора».
+    var cardKey: String? {
+        let digits = (cardDigits ?? "").filter(\.isNumber)
+        return digits.count >= 4 ? digits : nil
+    }
 
     var isCard: Bool { kind == .creditCard }
 
@@ -122,6 +130,10 @@ struct Debt: Codable, Identifiable, Hashable {
 
     /// Платежи по этому долгу в выписках.
     func payments(in transactions: [Transaction]) -> [Transaction] {
+        // Кредитка с указанными цифрами: платежи — найденные погашения
+        if isCard && cardKey != nil {
+            return transactions.filter { ($0.creditDebtID == id) && ($0.creditRole == .repayment) }
+        }
         guard !match.isEmpty else { return [] }
         return transactions.filter { ($0.amount < 0) && $0.counterparty.contains(match) }
     }
@@ -174,12 +186,90 @@ extension Store {
             debts.append(debt)
         }
         debts.sort { $0.upcomingPayment() < $1.upcomingPayment() }
+        applyCreditCards()
         save()
     }
 
     func deleteDebt(_ id: Debt.ID) {
         debts.removeAll { $0.id == id }
+        applyCreditCards()
         save()
+    }
+
+    // MARK: Операции по кредитным картам
+
+    /// Размечает операции по кредиткам с указанными цифрами карты или номером договора:
+    /// - по самой карте: покупки остаются тратами, пополнения и снятия — переводы;
+    /// - с других счетов с этими цифрами в описании: пополнение кредитки — погашение долга.
+    ///   Если выписка самой кредитки загружена, покупки уже посчитаны — тогда погашение не трата, а перевод.
+    func applyCreditCards() {
+        // Сначала снимаем прежнюю разметку — цифры могли измениться или карту удалили
+        for i in transactions.indices where transactions[i].creditRole != nil {
+            if let before = transactions[i].categoryBeforeCredit, !transactions[i].isManual {
+                transactions[i].category = before
+            }
+            transactions[i].creditDebtID = nil
+            transactions[i].creditRole = nil
+            transactions[i].categoryBeforeCredit = nil
+        }
+        for card in debts where card.isCard {
+            guard let key = card.cardKey else { continue }
+            let onCard: (Transaction) -> Bool = { t in
+                key.count == 4 && t.card.filter(\.isNumber).hasSuffix(key)
+            }
+            let hasCardStatement = transactions.contains(where: onCard)
+            for i in transactions.indices where transactions[i].creditRole == nil {
+                let t = transactions[i]
+                var role: CreditRole?
+                var category: Category?
+                if onCard(t) {
+                    if (t.amount < 0) && t.category.isExpense && (t.category != .transfersOut) {
+                        role = .purchase
+                    } else {
+                        role = t.amount > 0 ? .repayment : .withdrawal
+                        category = .internalTransfer
+                    }
+                } else if Store.mentions(key, in: t) {
+                    if t.amount < 0 {
+                        role = .repayment
+                        category = hasCardStatement ? .internalTransfer : .loans
+                    } else {
+                        // Снятие с кредитки на свой счёт: без выписки кредитки потраченное с дебетовой
+                        // посчиталось бы ещё раз в погашении — поэтому снятие уменьшает «Кредиты»
+                        role = .withdrawal
+                        category = hasCardStatement ? .internalTransfer : .loans
+                    }
+                }
+                guard let role else { continue }
+                transactions[i].creditDebtID = card.id
+                transactions[i].creditRole = role
+                if let category, !t.isManual, category != t.category {
+                    transactions[i].categoryBeforeCredit = t.category
+                    transactions[i].category = category
+                }
+            }
+        }
+    }
+
+    /// Цифры карты или договора есть в описании отдельным числом: «на договор 0123456789», «на карту *1234».
+    static func mentions(_ key: String, in t: Transaction) -> Bool {
+        let text = t.title + " " + t.bankCategory
+        return text.range(of: "(?<!\\d)\(key)(?!\\d)", options: .regularExpression) != nil
+    }
+
+    /// Операции по карте за месяц: покупки и погашения.
+    func creditActivity(_ card: Debt, month: Date) -> (purchases: Decimal, repayments: Decimal, items: [Transaction]) {
+        var items = transactions.filter {
+            ($0.creditDebtID == card.id) && Store.calendar.isDate($0.date, equalTo: month, toGranularity: .month)
+        }
+        // Пополнение видно с двух сторон: списание с дебетовой и зачисление на кредитку.
+        // Если зачисления на кредитку есть — списания с дебетовой не показываем и не считаем второй раз
+        if items.contains(where: { ($0.creditRole == .repayment) && ($0.amount > 0) }) {
+            items.removeAll { ($0.creditRole == .repayment) && ($0.amount < 0) }
+        }
+        let purchases = items.filter { $0.creditRole == .purchase }.reduce(Decimal(0)) { $0 + $1.absAmount }
+        let repayments = items.filter { $0.creditRole == .repayment }.reduce(Decimal(0)) { $0 + $1.absAmount }
+        return (purchases, repayments, items.sorted { $0.date > $1.date })
     }
 
     /// Похожие на платежи по кредитам операции из выписок, которых ещё нет в списке долгов.

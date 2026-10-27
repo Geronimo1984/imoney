@@ -39,6 +39,11 @@ struct Transaction: Codable, Identifiable, Hashable {
     /// Отпечаток для поиска дублей при повторном импорте.
     var fingerprint: String = ""
     var importID: UUID?
+    /// Операция по кредитной карте: какой долг и что это — покупка, погашение или снятие.
+    var creditDebtID: UUID?
+    var creditRole: CreditRole?
+    /// Категория до разметки по кредитке — чтобы вернуть её, если карту удалят или сменят цифры.
+    var categoryBeforeCredit: Category?
 
     var absAmount: Decimal { amount < 0 ? -amount : amount }
 
@@ -89,3 +94,22 @@ struct ImportRecord: Codable, Identifiable, Hashable {
 extension Decimal {
     var double: Double { NSDecimalNumber(decimal: self).doubleValue }
 }
+
+/// Роль операции по кредитной карте.
+enum CreditRole: String, Codable {
+    /// Покупка по кредитке — обычная трата, но в долг.
+    case purchase
+    /// Пополнение кредитки — погашение долга.
+    case repayment
+    /// Снятие или перевод с кредитки на свой счёт — долг растёт, но это не трата.
+    case withdrawal
+
+    var title: String {
+        switch self {
+        case .purchase:   return "Покупка по кредитке"
+        case .repayment:  return "Погашение кредитки"
+        case .withdrawal: return "Снятие с кредитки"
+        }
+    }
+}
+

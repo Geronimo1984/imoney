@@ -157,6 +157,9 @@ struct DebtDetail: View {
                 if debt.isCard {
                     adviceSection(debt)
                     cardSection(debt)
+                    if debt.cardKey != nil {
+                        cardActivitySection(debt)
+                    }
                 }
 
                 Section {
@@ -230,6 +233,33 @@ extension DebtDetail {
 
     /// Кредитная карта: как погасить без процентов — главное, что нужно знать о карте.
     @ViewBuilder
+    /// Покупки и погашения по кредитке за месяц — из выписок.
+    func cardActivitySection(_ debt: Debt) -> some View {
+        let activity = store.creditActivity(debt, month: store.month)
+        return Section {
+            LabeledContent("Покупки", value: Fmt.money(activity.purchases))
+            LabeledContent("Погашено", value: Fmt.money(activity.repayments))
+            ForEach(activity.items.prefix(15)) { t in
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(t.title).lineLimit(1)
+                        Text("\(t.creditRole?.title ?? "") · \(t.date.formatted(.dateTime.day().month(.abbreviated)))")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Text(Fmt.exact(t.amount, sign: true))
+                        .foregroundStyle(t.creditRole == .purchase ? Color.primary : .green)
+                }
+            }
+        } header: {
+            Text("Операции по карте за \(Fmt.month(store.month).lowercased())")
+        } footer: {
+            if activity.items.isEmpty {
+                Text("Операций с этими цифрами в загруженных выписках нет. Проверьте цифры карты или номер договора.")
+            }
+        }
+    }
+
     func cardSection(_ debt: Debt) -> some View {
         Section {
             LabeledContent("Кредитный лимит", value: Fmt.money(debt.creditLimit))
@@ -296,10 +326,23 @@ struct DebtEditor: View {
                 } footer: {
                     Text("Остаток и ставку можно посмотреть в приложении банка. По ним iMoney посчитает, когда долг закроется и сколько уйдёт на проценты.")
                 }
-                Section {
-                    TextField("Название платежа в выписке", text: $debt.match)
-                } footer: {
-                    Text("Необязательно. Если указать, iMoney будет отмечать, что платёж в этом месяце уже прошёл.")
+                if debt.kind == .creditCard {
+                    Section {
+                        TextField("Последние 4 цифры или номер договора",
+                                  text: Binding(get: { debt.cardDigits ?? "" },
+                                                set: { debt.cardDigits = String($0.filter(\.isNumber).prefix(20)) }))
+                            .keyboardType(.numberPad)
+                    } header: {
+                        Text("Карта в выписках")
+                    } footer: {
+                        Text("По этим цифрам iMoney найдёт операции кредитки: покупки останутся тратами, а пополнения кредитки с других счетов станут погашением долга, а не переводом между счетами.")
+                    }
+                } else {
+                    Section {
+                        TextField("Название платежа в выписке", text: $debt.match)
+                    } footer: {
+                        Text("Необязательно. Если указать, iMoney будет отмечать, что платёж в этом месяце уже прошёл.")
+                    }
                 }
                 if !isNew {
                     Section {

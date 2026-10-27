@@ -200,4 +200,15 @@ final class TapTests: XCTestCase {
         app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Начать")).firstMatch.tap()
         XCTAssertTrue(app.tabBars.buttons["Сводка"].waitForExistence(timeout: 3), "Обучение не закрылось")
     }
+
+    func testCreditCardOperations() {
+        let app = launch(["-tab=plan"])
+        open(app, "Кредитная карта")
+        XCTAssertTrue(app.navigationBars["Кредитная карта"].waitForExistence(timeout: 3))
+        let section = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH[c] %@", "Операции по карте")).firstMatch
+        for _ in 0..<6 where !section.exists { app.swipeUp() }
+        XCTAssertTrue(section.exists, "Нет раздела с операциями по кредитке")
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "Погашение кредитки")).firstMatch.exists)
+        shot(app, "credit_card_ops")
+    }
 }
