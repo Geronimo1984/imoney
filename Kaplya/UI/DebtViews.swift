@@ -231,8 +231,6 @@ extension DebtDetail {
         }
     }
 
-    /// Кредитная карта: как погасить без процентов — главное, что нужно знать о карте.
-    @ViewBuilder
     /// Покупки и погашения по кредитке за месяц — из выписок.
     func cardActivitySection(_ debt: Debt) -> some View {
         let activity = store.creditActivity(debt, month: store.month)
@@ -260,6 +258,8 @@ extension DebtDetail {
         }
     }
 
+    /// Кредитная карта: как погасить без процентов — главное, что нужно знать о карте.
+    @ViewBuilder
     func cardSection(_ debt: Debt) -> some View {
         Section {
             LabeledContent("Кредитный лимит", value: Fmt.money(debt.creditLimit))
