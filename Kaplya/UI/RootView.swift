@@ -12,15 +12,19 @@ struct RootView: View {
     var body: some View {
         TabView(selection: $tab) {
             SummaryView()
+                .growIntro("summary")
                 .tabItem { Label("Сводка", systemImage: "chart.bar.xaxis") }
                 .tag("summary")
             OperationsView()
+                .growIntro("operations")
                 .tabItem { Label("Операции", systemImage: "list.bullet.rectangle") }
                 .tag("operations")
             PlanView()
+                .growIntro("plan")
                 .tabItem { Label("План", systemImage: "list.bullet.clipboard") }
                 .tag("plan")
-            AccountsView()
+            AccountsView(isActiveTab: tab == "accounts")
+                .growIntro("accounts")
                 .tabItem { Label("Счета", systemImage: "creditcard") }
                 .tag("accounts")
         }

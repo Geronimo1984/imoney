@@ -76,10 +76,22 @@ enum Reminders {
             let content = UNMutableNotificationContent()
             content.title = "Лимит превышен: \(limit.category.title)"
             content.body = "\(Fmt.money(spent)) из \(Fmt.money(limit.amount)) за месяц."
-            center.add(UNNotificationRequest(identifier: prefix + "limit." + key, content: content,
-                                             trigger: UNTimeIntervalNotificationTrigger(timeInterval: 1, repeats: false)))
+            // Без триггера — показывается сразу: отложенное на секунду стиралось следующим пересчётом
+            // расписания (импорт сохраняет данные несколько раз подряд), а лимит уже считался «уведомлённым»
+            center.add(UNNotificationRequest(identifier: prefix + "limit." + key, content: content, trigger: nil))
         }
         UserDefaults.standard.set(Array(sent), forKey: notifiedLimitsKey)
+    }
+}
+
+/// Превышение лимита случается при загрузке выписки, то есть в открытом приложении —
+/// без делегата iOS молча прячет такие уведомления.
+final class ForegroundNotifications: NSObject, UNUserNotificationCenterDelegate {
+    static let shared = ForegroundNotifications()
+
+    func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification) async
+        -> UNNotificationPresentationOptions {
+        [.banner, .list, .sound]
     }
 }
 

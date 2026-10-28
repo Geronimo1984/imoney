@@ -37,10 +37,11 @@ extension Store {
     }
 
     /// Сколько ещё отложить до конца текущего месяца на неоплаченные разовые расходы.
+    /// Дата прошла, а оплаты в выписке нет — деньги всё равно держим: как и обещает подпись в плане,
+    /// сумма откладывается, пока расход не оплачен или не отмечен оплаченным.
     func plannedReserve(now: Date = Date()) -> Decimal {
-        let today = Store.calendar.startOfDay(for: now)
-        return planned(in: Store.startOfMonth(now))
-            .filter { ($0.date >= today) && !$0.isPaid(transactions: transactions) }
+        planned(in: Store.startOfMonth(now))
+            .filter { !$0.isPaid(transactions: transactions) }
             .reduce(0) { $0 + $1.amount }
     }
 

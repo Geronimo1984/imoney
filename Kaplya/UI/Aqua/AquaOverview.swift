@@ -21,6 +21,10 @@ struct AquaRoot: View {
                 default:           AquaOverview()
                 }
             }
+            // Вкладка пересоздаётся при каждом переключении — вступление играет только в первый раз
+            .growIntro("aqua-" + tab)
+            // Своё состояние вступления у каждой вкладки, иначе оно оставалось от первой открытой
+            .id(tab)
             .frame(maxHeight: .infinity)
             AquaTabBar(tab: $tab, items: [
                 ("overview", "Обзор", "chart.pie.fill"),
@@ -194,8 +198,9 @@ struct AquaWheel: View {
     var total: Decimal
     var onOpen: (Category) -> Void
     @State private var selected: Category?
-    /// При появлении колесо докручивается на место, как барабан в iOS 6
+    /// При первом появлении колесо докручивается на место, как барабан в iOS 6
     @State private var spun = false
+    @Environment(\.growOnAppear) private var growOnAppear
 
     var body: some View {
         let top = Array(totals.prefix(7))
@@ -239,9 +244,9 @@ struct AquaWheel: View {
                     .accessibilityLabel(item.category.title)
                 }
                 // Каждый сектор размером с колесо, поэтому все крутятся вокруг общего центра
-                .rotationEffect(.degrees(spun ? 0 : -140))
-                .scaleEffect(spun ? 1 : 0.75)
-                .opacity(spun ? 1 : 0)
+                .rotationEffect(.degrees(spun || !growOnAppear ? 0 : -140))
+                .scaleEffect(spun || !growOnAppear ? 1 : 0.75)
+                .opacity(spun || !growOnAppear ? 1 : 0)
                 // Хромированная середина
                 VStack(spacing: 2) {
                     Text(current?.category.title ?? "Расходы").font(Aqua.font(12, .bold)).foregroundStyle(Aqua.label)
@@ -264,7 +269,11 @@ struct AquaWheel: View {
         .sensoryFeedback(.selection, trigger: selected)
         .onAppear {
             guard !spun else { return }
-            Motion.animate(.spring(response: 0.9, dampingFraction: 0.68)) { spun = true }
+            if growOnAppear {
+                Motion.animate(.spring(response: 0.9, dampingFraction: 0.68)) { spun = true }
+            } else {
+                spun = true
+            }
         }
     }
 }

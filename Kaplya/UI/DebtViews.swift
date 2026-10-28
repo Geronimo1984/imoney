@@ -5,10 +5,12 @@ struct PaidRing: View {
     var share: Double
     var color: Color
     var lineWidth: CGFloat = 5
+    /// Большое кольцо на странице долга растёт при каждом открытии.
+    var always = false
 
     var body: some View {
         // Кольцо замыкается до своей доли при появлении и плавно — после пополнения или платежа
-        Growing(value: share) { shown in
+        Growing(value: share, always: always) { shown in
             ring(shown)
         }
     }
@@ -144,7 +146,7 @@ struct DebtDetail: View {
                 Section {
                     VStack(spacing: 12) {
                         ZStack {
-                            PaidRing(share: debt.ringShare, color: debt.kind.color, lineWidth: 14)
+                            PaidRing(share: debt.ringShare, color: debt.kind.color, lineWidth: 14, always: true)
                             VStack(spacing: 2) {
                                 Text("\(Int((debt.ringShare * 100).rounded()))%").font(.system(size: 34, weight: .bold, design: .rounded))
                                 Text(debt.isCard ? "лимита занято" : "выплачено").font(.caption).foregroundStyle(.secondary)

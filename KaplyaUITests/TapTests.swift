@@ -314,5 +314,22 @@ final class TapTests: XCTestCase {
         sleep(1)
         XCTAssertFalse(app.staticTexts["Пришло"].exists, "Стопка не вернулась")
         shot(app, "account_stack")
+
+        // «Готово» сворачивает карту, и выбор оформления снова доступен
+        sber.tap()
+        XCTAssertTrue(app.staticTexts["Пришло"].waitForExistence(timeout: 5))
+        app.navigationBars.buttons["Готово"].tap()
+        let glossy = app.buttons["Оформление: Глянцевое"]
+        for _ in 0..<4 where !glossy.isHittable { app.swipeUp() }
+        XCTAssertTrue(glossy.isHittable, "Не видно выбора оформления после «Готово»")
+
+        // Уход с вкладки тоже сворачивает карту
+        for _ in 0..<4 { app.swipeDown() }
+        sber.tap()
+        XCTAssertTrue(app.staticTexts["Пришло"].waitForExistence(timeout: 5))
+        app.tabBars.buttons["Сводка"].tap()
+        app.tabBars.buttons["Счета"].tap()
+        sleep(1)
+        XCTAssertFalse(app.staticTexts["Пришло"].exists, "Карта осталась раскрытой после смены вкладки")
     }
 }

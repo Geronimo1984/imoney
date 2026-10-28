@@ -5,7 +5,8 @@ import SwiftUI
 enum Motion {
     static let standard: Animation = .smooth(duration: 0.4)
     static let spring: Animation = .spring(response: 0.45, dampingFraction: 0.82)
-    static let grow: Animation = .spring(response: 0.7, dampingFraction: 0.85).delay(0.1)
+    /// Рост полосок и колец: ровно полсекунды, без пружинного «хвоста», который держит анимацию ещё секунду-две.
+    static let grow: Animation = .easeOut(duration: 0.5).delay(0.05)
 
     static var reduced: Bool { UIAccessibility.isReduceMotionEnabled }
 
@@ -78,15 +79,21 @@ private struct MotionModifier<V: Equatable>: ViewModifier {
 /// как кольца в «Фитнесе». Используется полосками прогресса.
 struct Growing<Content: View>: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.growOnAppear) private var growOnAppear
     var value: Double
+    /// Растёт при каждом появлении, даже на вкладке, где вступление уже сыграло:
+    /// итоги месяца, результат загрузки, подробности долга — это отдельные события, а не содержимое вкладки.
+    var always = false
     @ViewBuilder var content: (Double) -> Content
     @State private var shown: Double?
 
+    private var grows: Bool { always || growOnAppear }
+
     var body: some View {
-        content(shown ?? 0)
+        content(shown ?? (grows ? 0 : value))
             .onAppear {
                 guard shown == nil else { return }
-                if reduceMotion { shown = value } else { withAnimation(Motion.grow) { shown = value } }
+                if reduceMotion || !grows { shown = value } else { withAnimation(Motion.grow) { shown = value } }
             }
             .onChange(of: value) { _, new in
                 if reduceMotion { shown = new } else { withAnimation(Motion.standard) { shown = new } }
@@ -114,7 +121,7 @@ struct CountingText: View {
     var format: (Double) -> String
 
     var body: some View {
-        Growing(value: value) { shown in
+        Growing(value: value, always: true) { shown in
             CountingLabel(value: shown, format: format).monospacedDigit()
         }
     }
@@ -137,5 +144,37 @@ private struct CountingLabel: View, Animatable {
 enum Haptic {
     static func delete() {
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+    }
+}
+
+extension EnvironmentValues {
+    /// Полоски и кольца вырастают при появлении. Выключается, когда вкладка уже показывала вступление.
+    @Entry var growOnAppear = true
+}
+
+extension View {
+    /// Вступительный рост полосок и колец — только при первом открытии вкладки.
+    /// Список пересоздаёт строки при каждом возврате на вкладку, и без этого всё росло заново:
+    /// десятки анимаций разом, переключение вкладок подтормаживало.
+    func growIntro(_ screen: String) -> some View {
+        modifier(GrowIntro(screen: screen))
+    }
+}
+
+private struct GrowIntro: ViewModifier {
+    @MainActor static var played: Set<String> = []
+    var screen: String
+    @State private var active: Bool?
+
+    func body(content: Content) -> some View {
+        content
+            .environment(\.growOnAppear, active ?? !GrowIntro.played.contains(screen))
+            .onAppear {
+                guard active == nil else { return }
+                active = !GrowIntro.played.contains(screen)
+                GrowIntro.played.insert(screen)
+                // Вступление успевает доиграть, дальше полоски сразу стоят на месте
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1) { active = false }
+            }
     }
 }

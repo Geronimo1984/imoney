@@ -8,6 +8,8 @@ struct AccountsView: View {
     @State private var outcome: ImportOutcome?
     @State private var confirmDeleteAll = false
     @State private var selectedBank: Bank?
+    /// Открыта ли сейчас вкладка «Счета».
+    var isActiveTab = true
     @Namespace private var cards
 
     var body: some View {
@@ -96,11 +98,23 @@ struct AccountsView: View {
             .overlay { openedCard(banks, stats) }
             .navigationTitle("Счета")
             .toolbar {
+                // Раскрытый счёт закрывает весь список — явная кнопка, чтобы вернуться к настройкам
+                if let bank = selectedBank, banks.contains(bank) {
+                    ToolbarItem(placement: .topBarLeading) {
+                        Button("Готово") {
+                            Motion.animate(.spring(response: 0.42, dampingFraction: 0.86)) { selectedBank = nil }
+                        }
+                        .fontWeight(.semibold)
+                    }
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button { picking = true } label: { Image(systemName: "plus") }
                         .accessibilityLabel("Загрузить выписку")
                 }
             }
+            // Ушли на другую вкладку — карта сворачивается, при возврате виден весь список.
+            // Не onDisappear: он срабатывает и при переходе на экран «Все операции»
+            .onChange(of: isActiveTab) { _, active in if !active { selectedBank = nil } }
             .fileImporter(isPresented: $picking,
                           allowedContentTypes: [.commaSeparatedText, .pdf, .plainText, .text],
                           allowsMultipleSelection: true) { result in
