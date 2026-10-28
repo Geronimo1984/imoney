@@ -36,7 +36,7 @@ struct AquaPlan: View {
                             Divider().overlay(Aqua.line)
                             AquaLinkRow(symbol: "chart.line.downtrend.xyaxis", color: .red, title: "Стратегия погашения") { showPayoff = true }
                             Divider().overlay(Aqua.line)
-                            AquaLinkRow(symbol: "creditcard.fill", color: .orange, title: "Кэшбэк по картам") { showCashback = true }
+                            AquaLinkRow(symbol: "arrow.uturn.backward", color: .orange, title: "Кэшбэк и проценты") { showCashback = true }
                         }
                         .groupCard()
                     }

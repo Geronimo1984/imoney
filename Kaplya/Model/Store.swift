@@ -11,7 +11,6 @@ final class Store {
     var incomePlan = IncomePlan()
     var debts: [Debt] = []
     var goals: [SavingsGoal] = []
-    var cashbackCards: [CashbackCard] = []
     var month: Date = Store.startOfMonth(Date())
     /// Растёт при каждом сохранении — по нему обновляются напоминания и виджет.
     var changes: Int = 0
@@ -32,11 +31,10 @@ final class Store {
         var incomePlan = IncomePlan()
         var debts: [Debt] = []
         var goals: [SavingsGoal] = []
-        var cashbackCards: [CashbackCard] = []
 
         init(transactions: [Transaction], rules: [CategoryRule], imports: [ImportRecord],
              recurring: [RecurringPayment], limits: [BudgetLimit], incomePlan: IncomePlan, debts: [Debt],
-             goals: [SavingsGoal], cashbackCards: [CashbackCard]) {
+             goals: [SavingsGoal]) {
             self.transactions = transactions
             self.rules = rules
             self.imports = imports
@@ -45,7 +43,6 @@ final class Store {
             self.incomePlan = incomePlan
             self.debts = debts
             self.goals = goals
-            self.cashbackCards = cashbackCards
         }
 
         // Старые сохранения без плана тоже читаются
@@ -59,7 +56,6 @@ final class Store {
             incomePlan = try c.decodeIfPresent(IncomePlan.self, forKey: .incomePlan) ?? IncomePlan()
             debts = try c.decodeIfPresent([Debt].self, forKey: .debts) ?? []
             goals = try c.decodeIfPresent([SavingsGoal].self, forKey: .goals) ?? []
-            cashbackCards = try c.decodeIfPresent([CashbackCard].self, forKey: .cashbackCards) ?? []
         }
     }
 
@@ -97,7 +93,6 @@ final class Store {
         incomePlan = state.incomePlan
         debts = state.debts
         goals = state.goals
-        cashbackCards = state.cashbackCards
     }
 
     func save() {
@@ -105,7 +100,7 @@ final class Store {
         guard persistent else { return }
         let state = SavedState(transactions: transactions, rules: rules, imports: imports,
                                recurring: recurring, limits: limits, incomePlan: incomePlan, debts: debts,
-                               goals: goals, cashbackCards: cashbackCards)
+                               goals: goals)
         if let data = try? JSONEncoder().encode(state) {
             try? data.write(to: fileURL, options: [.atomic, .completeFileProtection])
         }
@@ -254,7 +249,6 @@ final class Store {
         incomePlan = IncomePlan()
         debts = []
         goals = []
-        cashbackCards = []
         month = Store.startOfMonth(Date())
         save()
     }
@@ -318,10 +312,6 @@ final class Store {
                         deadline: cal.date(byAdding: .month, value: 12, to: Date()), colorIndex: 1),
             SavingsGoal(title: "Отпуск летом", symbol: "airplane", target: 120_000, saved: 45_000,
                         deadline: cal.date(byAdding: .month, value: 8, to: Date()), colorIndex: 0)
-        ]
-        cashbackCards = [
-            CashbackCard(title: "Т-Банк Black", bank: .tbank, base: 1, rates: [.cafe: 5, .taxi: 5, .delivery: 3]),
-            CashbackCard(title: "СберКарта", bank: .sber, base: 0.5, rates: [.groceries: 5, .health: 3, .marketplace: 2])
         ]
     }
 

@@ -150,9 +150,9 @@ final class TapTests: XCTestCase {
 
     func testCashback() {
         let app = launch([])
-        open(app, "−")
+        open(app, "+")
         XCTAssertTrue(app.navigationBars["Кэшбэк"].waitForExistence(timeout: 3))
-        XCTAssertTrue(app.staticTexts["Какой картой платить"].exists || app.staticTexts["КАКОЙ КАРТОЙ ПЛАТИТЬ"].exists)
+        XCTAssertTrue(app.staticTexts["Проценты на остаток"].exists, "Нет разбивки на кэшбэк и проценты")
         shot(app, "cashback")
     }
 
@@ -210,5 +210,23 @@ final class TapTests: XCTestCase {
         XCTAssertTrue(section.exists, "Нет раздела с операциями по кредитке")
         XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "Погашение кредитки")).firstMatch.exists)
         shot(app, "credit_card_ops")
+    }
+
+    func testAutoImportFolderPicker() {
+        let app = launch(["-tab=accounts"])
+        let toggle = app.switches.matching(NSPredicate(format: "label CONTAINS %@", "Загружать новые выписки")).firstMatch
+        for _ in 0..<6 where !toggle.isHittable { app.swipeUp() }
+        if (toggle.value as? String) != "1" { toggle.switches.firstMatch.tap() }
+        let choose = app.buttons["Выбрать другую папку…"]
+        for _ in 0..<3 where !choose.isHittable { app.swipeUp() }
+        sleep(1)
+        choose.tap()
+        let openButton = app.buttons.matching(NSPredicate(format: "label IN %@", ["Open", "Открыть"])).firstMatch
+        let opened = openButton.waitForExistence(timeout: 5)
+        // Выбор папки — отдельный процесс, снимок окна приложения его не видит
+        if let dir = ProcessInfo.processInfo.environment["SHOTS"] {
+            try? XCUIScreen.main.screenshot().pngRepresentation.write(to: URL(fileURLWithPath: dir + "folder_picker.png"))
+        }
+        XCTAssertTrue(opened, "Не открылся выбор папки")
     }
 }

@@ -68,7 +68,7 @@ enum Categorizer {
         let text = name + " " + bankCat
         if ["зарплат", "заработн", "аванс", "salary", "оплата труда", "отпускн", "премия"]
             .contains(where: text.contains) { return .salary }
-        if ["кэшбэк", "кешбэк", "cashback", "проценты", "капитализац", "бонус", "вознаграждение"]
+        if ["кэшбэк", "кешбэк", "cashback", "процент", "капитализац", "бонус", "вознаграждение"]
             .contains(where: text.contains) { return .cashback }
         if isTransfer(text) { return .transfersIn }
         return .otherIncome

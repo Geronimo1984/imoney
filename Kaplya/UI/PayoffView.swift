@@ -80,3 +80,7 @@ struct PayoffView: View {
         return d.formatted(.dateTime.month(.abbreviated).year())
     }
 }
+
+func percent(_ value: Double) -> String {
+    value.formatted(.number.precision(.fractionLength(0...1)).locale(Locale(identifier: "ru_RU"))) + "%"
+}

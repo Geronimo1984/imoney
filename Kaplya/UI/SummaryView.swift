@@ -213,9 +213,9 @@ struct SummaryView: View {
                              "13% с лечения, учёбы, спорта", compact: true)
                 }
                 NavigationLink { CashbackView() } label: {
-                    toolCard("creditcard.fill", .orange,
-                             cashback.missed > 0 ? "−\(Fmt.money(cashback.missed)) кэшбэка" : "Кэшбэк",
-                             "Какой картой платить", compact: true)
+                    toolCard("arrow.uturn.backward", .orange,
+                             cashback.month.total > 0 ? "+\(Fmt.money(cashback.month.total))" : "Кэшбэк",
+                             "Кэшбэк и проценты за месяц", compact: true)
                 }
             }
         }

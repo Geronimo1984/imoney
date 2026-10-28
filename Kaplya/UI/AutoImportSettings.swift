@@ -15,6 +15,10 @@ struct AutoImportSection: View {
             if auto.enabled {
                 LabeledContent("Папка", value: auto.folderTitle)
                 Button("Выбрать другую папку…") { picking = true }
+                    // Лист на самой кнопке: повешенный на Section внутри List не открывается
+                    .sheet(isPresented: $picking) {
+                        FolderPicker { auto.choose($0) }.ignoresSafeArea()
+                    }
                 if auto.customFolderName != nil {
                     Button("Вернуть папку iMoney") { auto.useDefaultFolder() }
                 }
@@ -29,9 +33,6 @@ struct AutoImportSection: View {
             Text("Автозагрузка")
         } footer: {
             Text("Сохраняйте выписки из банка в эту папку: «Поделиться» → «Сохранить в Файлы». При каждом открытии iMoney загрузит самый новый файл, если его ещё не было.")
-        }
-        .fileImporter(isPresented: $picking, allowedContentTypes: [.folder]) { result in
-            if case .success(let url) = result { auto.choose(url) }
         }
     }
 }
@@ -77,8 +78,35 @@ struct AquaAutoImportCard: View {
             }
         }
         .groupCard()
-        .fileImporter(isPresented: $picking, allowedContentTypes: [.folder]) { result in
-            if case .success(let url) = result { auto.choose(url) }
+        .sheet(isPresented: $picking) {
+            FolderPicker { auto.choose($0) }.ignoresSafeArea()
+        }
+    }
+}
+
+/// Выбор папки в «Файлах». Не fileImporter: экран выше уже держит свой для выписок,
+/// а SwiftUI показывает только один из вложенных — кнопка выбора папки молча не срабатывала.
+struct FolderPicker: UIViewControllerRepresentable {
+    var onPick: (URL) -> Void
+
+    func makeUIViewController(context: Context) -> UIDocumentPickerViewController {
+        let picker = UIDocumentPickerViewController(forOpeningContentTypes: [.folder])
+        picker.allowsMultipleSelection = false
+        picker.directoryURL = AutoImporter.defaultFolder
+        picker.delegate = context.coordinator
+        return picker
+    }
+
+    func updateUIViewController(_ controller: UIDocumentPickerViewController, context: Context) {}
+
+    func makeCoordinator() -> Coordinator { Coordinator(onPick: onPick) }
+
+    final class Coordinator: NSObject, UIDocumentPickerDelegate {
+        let onPick: (URL) -> Void
+        init(onPick: @escaping (URL) -> Void) { self.onPick = onPick }
+
+        func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
+            if let url = urls.first { onPick(url) }
         }
     }
 }

@@ -1,71 +1,72 @@
 import Foundation
 
-/// Карта с кэшбэком: базовый процент и повышенные категории (у Т-Банка они меняются каждый месяц).
-struct CashbackCard: Codable, Identifiable, Hashable {
-    var id = UUID()
-    var title: String
-    var bank: Bank
-    var base: Double = 1
-    var rates: [Category: Double] = [:]
+/// Кэшбэк по факту: поступления из выписок с категорией «Кэшбэк и проценты».
+/// Условия банков часто меняются, поэтому ничего не планируем — только считаем, сколько пришло.
+enum CashbackKind: String, CaseIterable, Identifiable {
+    case cashback, interest
 
-    func rate(for category: Category) -> Double { rates[category] ?? base }
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .cashback: return "Кэшбэк и бонусы"
+        case .interest: return "Проценты на остаток"
+        }
+    }
+
+    var symbol: String {
+        switch self {
+        case .cashback: return "arrow.uturn.backward.circle.fill"
+        case .interest: return "percent"
+        }
+    }
+
+    /// Проценты по вкладу или накопительному счёту узнаём по названию, остальное — кэшбэк.
+    static func of(_ t: Transaction) -> CashbackKind {
+        let text = (t.title + " " + t.bankCategory).lowercased()
+        return ["процент", "капитализац", "вклад", "накопит"].contains(where: text.contains) ? .interest : .cashback
+    }
 }
 
-/// Какой картой платить в категории и сколько это даёт.
-struct CashbackTip: Identifiable {
-    var category: Category
-    var spent: Decimal
-    var card: CashbackCard
-    var rate: Double
-    var id: Category { category }
+struct CashbackMonth: Identifiable {
+    var month: Date
+    var byKind: [CashbackKind: Decimal]
+    var total: Decimal { byKind.values.reduce(0, +) }
+    var id: Date { month }
 }
 
 struct CashbackReport {
-    var earned: Decimal
-    var missed: Decimal
-    var tips: [CashbackTip]
+    var month: CashbackMonth
+    var byBank: [(bank: Bank, amount: Decimal)]
+    /// Последние 12 месяцев, новые сверху; пустые месяцы в начале истории пропущены.
+    var history: [CashbackMonth]
+    var yearTotal: Decimal
+    var transactions: [Transaction]
 }
 
 extension Store {
-    /// Категории, где кэшбэк обычно не начисляется.
-    private static let noCashback: Set<Category> = [.transfersOut, .internalTransfer, .loans, .savings, .cash, .taxes, .housing]
-
-    func saveCashbackCard(_ card: CashbackCard) {
-        if let i = cashbackCards.firstIndex(where: { $0.id == card.id }) {
-            cashbackCards[i] = card
-        } else {
-            cashbackCards.append(card)
+    private func cashbackMonth(_ month: Date) -> (CashbackMonth, [Transaction]) {
+        let items = transactions.filter {
+            ($0.category == .cashback) && ($0.amount > 0) && (Store.startOfMonth($0.date) == month)
         }
-        save()
+        var byKind: [CashbackKind: Decimal] = [:]
+        for t in items { byKind[CashbackKind.of(t), default: 0] += t.amount }
+        return (CashbackMonth(month: month, byKind: byKind), items.sorted { $0.date > $1.date })
     }
 
-    func deleteCashbackCard(_ id: CashbackCard.ID) {
-        cashbackCards.removeAll { $0.id == id }
-        save()
-    }
-
-    func bestCard(for category: Category) -> CashbackCard? {
-        cashbackCards.max { $0.rate(for: category) < $1.rate(for: category) }
-    }
-
-    /// Кэшбэк за месяц: сколько получено по картам, которыми платили, и сколько недополучено.
     func cashbackReport() -> CashbackReport {
-        guard !cashbackCards.isEmpty else { return CashbackReport(earned: 0, missed: 0, tips: []) }
-        var earned = Decimal(0), best = Decimal(0)
-        for t in monthTransactions where t.amount < 0 && t.category.isExpense && !Store.noCashback.contains(t.category) {
-            let actual = cashbackCards.first { $0.bank == t.bank }?.rate(for: t.category) ?? 0
-            let top = bestCard(for: t.category)?.rate(for: t.category) ?? 0
-            earned += t.absAmount * Decimal(actual / 100)
-            best += t.absAmount * Decimal(top / 100)
-        }
-        let stats = Analytics.stats(transactions, month: month)
-        let tips = stats.byCategory
-            .filter { !Store.noCashback.contains($0.category) }
-            .prefix(8)
-            .compactMap { item -> CashbackTip? in
-                guard let card = bestCard(for: item.category) else { return nil }
-                return CashbackTip(category: item.category, spent: item.amount, card: card, rate: card.rate(for: item.category))
-            }
-        return CashbackReport(earned: earned, missed: max(best - earned, 0), tips: tips)
+        let (current, items) = cashbackMonth(month)
+        var byBank: [Bank: Decimal] = [:]
+        for t in items { byBank[t.bank, default: 0] += t.amount }
+
+        var history = (0..<12).compactMap { Store.calendar.date(byAdding: .month, value: -$0, to: month) }
+            .map { cashbackMonth($0).0 }
+        while let last = history.last, last.total == 0 { history.removeLast() }
+
+        return CashbackReport(month: current,
+                              byBank: byBank.sorted { $0.value > $1.value }.map { ($0.key, $0.value) },
+                              history: history,
+                              yearTotal: history.reduce(0) { $0 + $1.total },
+                              transactions: items)
     }
 }

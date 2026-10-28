@@ -56,7 +56,7 @@ struct AccountsView: View {
 
                 Section {
                     NavigationLink { CashbackView() } label: {
-                        Label("Кэшбэк по картам", systemImage: "creditcard.fill")
+                        Label("Кэшбэк и проценты", systemImage: "arrow.uturn.backward.circle.fill")
                     }
                     NavigationLink { TaxView() } label: {
                         Label("Налоговый вычет", systemImage: "percent")
