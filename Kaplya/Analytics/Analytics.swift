@@ -61,8 +61,56 @@ struct Insight: Identifiable {
     var text: String
 }
 
+/// Период сводки: неделя, месяц или год, и такие же прошлые периоды для сравнения.
+struct Span {
+    enum Kind: String, CaseIterable, Identifiable {
+        case week = "Неделя", month = "Месяц", year = "Год"
+        var id: String { rawValue }
+    }
+
+    var kind: Kind
+    var range: Range<Date>
+    /// Три прошлые недели, три прошлых месяца или прошлый год — новые первыми.
+    var previous: [Range<Date>]
+
+    /// «за неделю», «за месяц», «за год».
+    var forTitle: String {
+        switch kind {
+        case .week:  return "за неделю"
+        case .month: return "за месяц"
+        case .year:  return "за год"
+        }
+    }
+
+    var days: Int { max(Store.calendar.dateComponents([.day], from: range.lowerBound, to: range.upperBound).day ?? 1, 1) }
+}
+
 enum Analytics {
     static var cal: Calendar { Store.calendar }
+
+    /// Неделя — последние 7 дней с операциями в выбранном месяце, год — 12 месяцев, заканчивая выбранным.
+    static func span(_ kind: Span.Kind, month: Date, all: [Transaction]) -> Span {
+        let nextMonth = cal.date(byAdding: .month, value: 1, to: month)!
+        switch kind {
+        case .week:
+            let last = all.lazy.map(\.date).filter { ($0 >= month) && ($0 < nextMonth) }.max() ?? month
+            let end = cal.date(byAdding: .day, value: 1, to: cal.startOfDay(for: last))!
+            let start = cal.date(byAdding: .day, value: -7, to: end)!
+            let previous = (1...3).map { n in
+                cal.date(byAdding: .day, value: -7 * n, to: start)! ..< cal.date(byAdding: .day, value: -7 * (n - 1), to: start)!
+            }
+            return Span(kind: kind, range: start..<end, previous: previous)
+        case .month:
+            let previous = (1...3).map { n in
+                cal.date(byAdding: .month, value: -n, to: month)! ..< cal.date(byAdding: .month, value: 1 - n, to: month)!
+            }
+            return Span(kind: kind, range: month..<nextMonth, previous: previous)
+        case .year:
+            let start = cal.date(byAdding: .month, value: -11, to: month)!
+            return Span(kind: kind, range: start..<nextMonth,
+                        previous: [cal.date(byAdding: .month, value: -12, to: start)! ..< start])
+        }
+    }
 
     static func inMonth(_ txns: [Transaction], _ month: Date, upToDay day: Int? = nil) -> [Transaction] {
         txns.filter {
@@ -73,9 +121,17 @@ enum Analytics {
     }
 
     static func stats(_ all: [Transaction], month: Date, upToDay: Int? = nil) -> MonthStats {
+        stats(of: inMonth(all, month, upToDay: upToDay))
+    }
+
+    static func stats(_ all: [Transaction], range: Range<Date>) -> MonthStats {
+        stats(of: all.filter { range.contains($0.date) })
+    }
+
+    private static func stats(of items: [Transaction]) -> MonthStats {
         var s = MonthStats()
         var cats: [Category: (Decimal, Int)] = [:]
-        for t in inMonth(all, month, upToDay: upToDay) {
+        for t in items {
             if t.category.isInternal {
                 if t.amount < 0 {
                     s.internalVolume += -t.amount
@@ -105,7 +161,8 @@ enum Analytics {
         cal.isDate(month, equalTo: now, toGranularity: .month)
     }
 
-    static func forecast(_ all: [Transaction], month: Date, now: Date = Date()) -> Forecast? {
+    /// reserved — разовые расходы, которые ещё впереди в этом месяце: их откладываем из остатка.
+    static func forecast(_ all: [Transaction], month: Date, now: Date = Date(), reserved: Decimal = 0) -> Forecast? {
         guard isCurrent(month, now: now) else { return nil }
         let days = cal.range(of: .day, in: .month, for: month)?.count ?? 30
         let today = cal.component(.day, from: now)
@@ -116,8 +173,8 @@ enum Analytics {
             .reduce(Decimal(0)) { $0 + $1.amount }
         let daily = (s.expenses - fixedSum) / Decimal(max(today, 1))
         let daysLeft = max(days - today, 0)
-        let projected = s.expenses + daily * Decimal(daysLeft)
-        let left = s.income - s.expenses
+        let projected = s.expenses + daily * Decimal(daysLeft) + reserved
+        let left = s.income - s.expenses - reserved
         // Сегодня тоже можно тратить — иначе в последний день месяца выходило 0
         let perDay = max(left, 0) / Decimal(daysLeft + 1)
         return Forecast(spent: s.expenses, projected: projected, daysLeft: daysLeft, perDayLeft: perDay)
@@ -169,14 +226,20 @@ enum Analytics {
     // MARK: Подсказки
 
     static func insights(_ all: [Transaction], month: Date, now: Date = Date()) -> [Insight] {
+        insights(all, span: span(.month, month: month, all: all), now: now)
+    }
+
+    static func insights(_ all: [Transaction], span: Span, now: Date = Date(), reserved: Decimal = 0) -> [Insight] {
         var result: [Insight] = []
-        let current = isCurrent(month, now: now)
-        let dayLimit = current ? cal.component(.day, from: now) : nil
-        let s = stats(all, month: month)
+        let month = span.range.lowerBound
+        // Период ещё идёт: прошлые сравниваем за тот же отрезок от начала
+        let current = span.range.contains(now)
+        let elapsed = now.timeIntervalSince(span.range.lowerBound)
+        let s = stats(all, range: span.range)
         guard s.expenses > 0 || s.income > 0 else { return [] }
 
         // 1. Прогноз до конца месяца
-        if let f = forecast(all, month: month, now: now), s.income > 0 {
+        if span.kind == .month, let f = forecast(all, month: month, now: now, reserved: reserved), s.income > 0 {
             if s.expenses >= s.income {
                 result.append(Insight(
                     tone: .warning, symbol: "exclamationmark.triangle.fill",
@@ -196,16 +259,18 @@ enum Analytics {
         }
 
         // 2. Рост категорий к среднему за прошлые месяцы (за тот же отрезок дней)
-        let previous = (1...3).compactMap { cal.date(byAdding: .month, value: -$0, to: month) }
-            .map { stats(all, month: $0, upToDay: dayLimit) }
+        let previous = span.previous
+            .map { r in stats(all, range: current ? r.lowerBound ..< min(r.upperBound, r.lowerBound.addingTimeInterval(elapsed)) : r) }
             .filter { $0.expenses > 0 }
+        // Заметная разница в рублях: за неделю меньше, за год больше
+        let minGrowth: Decimal = span.kind == .week ? 1_000 : (span.kind == .month ? 2_000 : 10_000)
         if !previous.isEmpty {
             var growth: [(CategoryTotal, Decimal)] = []
             for item in s.byCategory where item.category != .transfersOut {
                 let avg = previous.reduce(Decimal(0)) { sum, p in
                     sum + (p.byCategory.first { $0.category == item.category }?.amount ?? 0)
                 } / Decimal(previous.count)
-                guard avg > 0, item.amount - avg >= 2_000, item.amount >= avg * 1.3 else { continue }
+                guard avg > 0, item.amount - avg >= minGrowth, item.amount >= avg * 1.3 else { continue }
                 growth.append((item, avg))
             }
             for (item, avg) in growth.sorted(by: { $0.0.amount - $0.1 > $1.0.amount - $1.1 }).prefix(2) {
@@ -213,7 +278,7 @@ enum Analytics {
                 result.append(Insight(
                     tone: .warning, symbol: item.category.symbol,
                     title: "\(item.category.title): +\(percent)% к обычному",
-                    text: "\(Fmt.money(item.amount)) против \(Fmt.money(avg)) в среднем за \(current ? "тот же период " : "")прошлых месяцев. Разница — \(Fmt.money(item.amount - avg))."))
+                    text: "\(Fmt.money(item.amount)) против \(Fmt.money(avg)) \(comparison(span, partial: current)). Разница — \(Fmt.money(item.amount - avg))."))
             }
         }
 
@@ -256,13 +321,17 @@ enum Analytics {
         }
 
         // 6. Мелкие покупки
-        let small = inMonth(all, month).filter { $0.category.isExpense && $0.amount < 0 && $0.absAmount <= 500 }
+        let small = all.filter { span.range.contains($0.date) && $0.category.isExpense && $0.amount < 0 && $0.absAmount <= 500 }
         let smallSum = small.reduce(Decimal(0)) { $0 + $1.absAmount }
-        if small.count >= 15 {
+        // 15 мелких покупок в месяц — порог, для недели и года пропорционально
+        if small.count >= max(15 * span.days / 30, 4) {
+            let yearly = span.kind == .year
+                ? "но за год набежало \(Fmt.money(smallSum))"
+                : "но за год это около \(Fmt.money(smallSum * 365 / Decimal(span.days)))"
             result.append(Insight(
                 tone: .tip, symbol: "cup.and.saucer.fill",
                 title: "\(small.count) \(Fmt.plural(small.count, "мелкая покупка", "мелкие покупки", "мелких покупок")) на \(Fmt.money(smallSum))",
-                text: "Покупки до 500 ₽ незаметны по отдельности, но за год это около \(Fmt.money(smallSum * 12))."))
+                text: "Покупки до 500 ₽ незаметны по отдельности, \(yearly)."))
         }
 
         // 7. Что исключено по сравнению с банковской статистикой
@@ -273,6 +342,16 @@ enum Analytics {
                 text: "\(s.internalCount) \(Fmt.plural(s.internalCount, "перевод", "перевода", "переводов")) между вашими счетами. В статистике банка они выглядят как расходы и доходы и искажают картину."))
         }
         return result
+    }
+
+    /// С чем сравниваем рост категории.
+    private static func comparison(_ span: Span, partial: Bool) -> String {
+        let same = partial ? "тот же период " : ""
+        switch span.kind {
+        case .week:  return "в среднем за \(same)прошлых недель"
+        case .month: return "в среднем за \(same)прошлых месяцев"
+        case .year:  return "за \(same)предыдущие 12 месяцев"
+        }
     }
 }
 

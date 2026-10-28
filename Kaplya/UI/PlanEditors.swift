@@ -227,6 +227,60 @@ struct RecurringEditor: View {
     }
 }
 
+/// Разовый расход: как событие в Календаре без повтора — название, сумма, категория, дата.
+struct PlannedExpenseEditor: View {
+    @Environment(Store.self) private var store
+    @Environment(\.dismiss) private var dismiss
+    @State var expense: PlannedExpense
+    var isNew: Bool
+    @State private var amount: Double = 0
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    TextField("Название", text: $expense.title)
+                    BigAmountField(value: $amount)
+                }
+                Section {
+                    Picker("Категория", selection: $expense.category) {
+                        ForEach(Category.expenseCases) { c in
+                            Label(c.title, systemImage: c.symbol).tag(c)
+                        }
+                    }
+                    DatePicker("Дата", selection: $expense.date, displayedComponents: .date)
+                    Toggle("Уже оплачено", isOn: $expense.done)
+                } footer: {
+                    Text("Когда в выписке рядом с этой датой появится трата этой категории на похожую сумму, расход отметится оплаченным сам.")
+                }
+                if !isNew {
+                    Section {
+                        Button("Удалить расход", role: .destructive) {
+                            store.deletePlanned(expense.id)
+                            dismiss()
+                        }
+                    }
+                }
+            }
+            .navigationTitle(isNew ? "Новый расход" : "Разовый расход")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Отмена") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button(isNew ? "Добавить" : "Готово") {
+                        expense.amount = Decimal(amount)
+                        store.savePlanned(expense)
+                        dismiss()
+                    }
+                    .fontWeight(.semibold)
+                    .disabled(expense.title.trimmingCharacters(in: .whitespaces).isEmpty || amount <= 0)
+                }
+            }
+            .onAppear { amount = expense.amount.double }
+        }
+    }
+}
+
 /// Найденные в выписках регулярные платежи — добавить одним нажатием.
 struct SuggestedPaymentsSheet: View {
     @Environment(Store.self) private var store

@@ -54,6 +54,12 @@ extension Store {
         return (CashbackMonth(month: month, byKind: byKind), items.sorted { $0.date > $1.date })
     }
 
+    /// Сколько пришло кэшбэка и процентов за период — для карточки в сводке.
+    func cashbackTotal(in range: Range<Date>) -> Decimal {
+        transactions.filter { ($0.category == .cashback) && ($0.amount > 0) && range.contains($0.date) }
+            .reduce(0) { $0 + $1.amount }
+    }
+
     func cashbackReport() -> CashbackReport {
         let (current, items) = cashbackMonth(month)
         var byBank: [Bank: Decimal] = [:]

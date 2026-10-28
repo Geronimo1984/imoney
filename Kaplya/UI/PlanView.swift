@@ -7,6 +7,7 @@ struct PlanView: View {
     @State private var editingLimit: Category?
     @State private var addingLimit = false
     @State private var editingPayment: RecurringPayment?
+    @State private var editingPlanned: PlannedExpense?
     @State private var showSuggestions = false
     @State private var showAutoPlan = false
     @State private var editingSavings = false
@@ -15,7 +16,7 @@ struct PlanView: View {
     var body: some View {
         let stats = Analytics.stats(store.transactions, month: store.month)
         let plan = store.planSummary()
-        let forecast = Analytics.forecast(store.transactions, month: store.month)
+        let forecast = store.forecast()
         let suggestions = store.suggestedRecurring()
 
         NavigationStack {
@@ -39,6 +40,7 @@ struct PlanView: View {
                 debtsSection(plan)
                 limitsSection(stats)
                 recurringSection(suggestions)
+                plannedSection
                 savingsSection(stats, plan)
                 GoalsSection()
                 rulesSection(stats)
@@ -53,6 +55,9 @@ struct PlanView: View {
             }
             .sheet(item: $editingPayment) { payment in
                 RecurringEditor(payment: payment, isNew: !store.recurring.contains { $0.id == payment.id })
+            }
+            .sheet(item: $editingPlanned) { expense in
+                PlannedExpenseEditor(expense: expense, isNew: !store.planned.contains { $0.id == expense.id })
             }
             .sheet(isPresented: $showSuggestions) { SuggestedPaymentsSheet() }
             .sheet(isPresented: $showAutoPlan) { AutoPlanSheet().presentationDetents([.medium, .large]) }
@@ -70,6 +75,7 @@ struct PlanView: View {
     private func distribution(_ plan: PlanSummary) -> some View {
         let parts: [(String, Decimal, Color)] = [
             ("Регулярные платежи", plan.recurring, .blue),
+            ("Разовые расходы", plan.planned, .purple),
             ("Кредиты", plan.debts, .red),
             ("Лимиты", plan.limits, .orange),
             ("Накопления", plan.savings, .green),
@@ -242,6 +248,54 @@ struct PlanView: View {
             Text("Регулярные платежи")
         } footer: {
             Text("Итого \(Fmt.money(store.recurring.reduce(0) { $0 + $1.monthly })) в месяц, \(Fmt.money(store.recurring.reduce(0) { $0 + $1.monthly } * 12)) в год.")
+        }
+    }
+
+    // MARK: Разовые расходы
+
+    private var plannedSection: some View {
+        let thisMonth = store.planned(in: store.month).reduce(Decimal(0)) { $0 + $1.amount }
+        return Section {
+            ForEach(store.upcomingPlanned) { expense in
+                let paid = expense.isPaid(transactions: store.transactions)
+                Button { editingPlanned = expense } label: {
+                    HStack(spacing: 12) {
+                        CategoryBadge(category: expense.category)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(expense.title).foregroundStyle(.primary).lineLimit(1)
+                            Text(paid ? "Оплачено" : expense.date.formatted(.dateTime.day().month(.wide).year()))
+                                .font(.caption)
+                                .foregroundStyle(paid ? Color.green : .secondary)
+                        }
+                        Spacer()
+                        Text(Fmt.money(expense.amount)).foregroundStyle(.secondary)
+                        if paid {
+                            Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+                        }
+                    }
+                }
+                .foregroundStyle(.primary)
+                .swipeActions {
+                    Button("Удалить", role: .destructive) { store.deletePlanned(expense.id) }
+                }
+                .swipeActions(edge: .leading) {
+                    Button(expense.done ? "Не оплачено" : "Оплачено", systemImage: "checkmark") {
+                        store.togglePlannedDone(expense.id)
+                    }
+                    .tint(.green)
+                }
+            }
+            Button {
+                editingPlanned = PlannedExpense(title: "", amount: 0, category: .gifts, date: Date())
+            } label: {
+                Label("Добавить расход", systemImage: "plus.circle.fill")
+            }
+        } header: {
+            Text("Разовые расходы")
+        } footer: {
+            Text(thisMonth > 0
+                 ? "За \(Fmt.month(store.month).lowercased()) — \(Fmt.money(thisMonth)). Пока расход не оплачен, его сумма откладывается из «можно тратить сегодня»."
+                 : "Отпуск, подарки, страховка — покупки на определённую дату. Они попадут в план своего месяца.")
         }
     }
 

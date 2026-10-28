@@ -87,6 +87,12 @@ extension Store {
         return years.sorted(by: >)
     }
 
+    /// Год вычета для выбранного месяца; если за него операций нет — последний год с операциями.
+    func taxYear(for month: Date) -> Int {
+        let year = Store.calendar.component(.year, from: month)
+        return taxYears.contains(year) ? year : (taxYears.first ?? year)
+    }
+
     func taxReport(year: Int) -> TaxReport {
         let cal = Store.calendar
         let items = transactions.filter { cal.component(.year, from: $0.date) == year && $0.amount < 0 }

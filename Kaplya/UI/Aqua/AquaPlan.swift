@@ -14,6 +14,7 @@ struct AquaPlan: View {
     @State private var showGoals = false
     @State private var showPayoff = false
     @State private var showCashback = false
+    @State private var editingPlanned: PlannedExpense?
 
     var body: some View {
         let stats = Analytics.stats(store.transactions, month: store.month)
@@ -28,6 +29,7 @@ struct AquaPlan: View {
                     debts(plan)
                     limits(stats)
                     recurring(suggestions)
+                    plannedSection
                     savings(stats, plan)
                     AquaSection(title: "Цели и инструменты") {
                         VStack(spacing: 0) {
@@ -48,6 +50,9 @@ struct AquaPlan: View {
         .sheet(isPresented: $addingLimit) { LimitEditor(category: nil, isNew: true) }
         .sheet(item: $editingPayment) { p in
             RecurringEditor(payment: p, isNew: !store.recurring.contains { $0.id == p.id })
+        }
+        .sheet(item: $editingPlanned) { expense in
+            PlannedExpenseEditor(expense: expense, isNew: !store.planned.contains { $0.id == expense.id })
         }
         .sheet(isPresented: $showSuggestions) { SuggestedPaymentsSheet() }
         .sheet(isPresented: $showAutoPlan) { AutoPlanSheet().presentationDetents([.medium, .large]) }
@@ -73,6 +78,7 @@ struct AquaPlan: View {
     private func distribution(_ plan: PlanSummary) -> some View {
         let parts: [(String, Decimal, Color)] = [
             ("Регулярные платежи", plan.recurring, Aqua.blue),
+            ("Разовые расходы", plan.planned, .purple),
             ("Кредиты", plan.debts, .red),
             ("Лимиты", plan.limits, .orange),
             ("Накопления", plan.savings, Color(red: 0.20, green: 0.70, blue: 0.30)),
@@ -232,6 +238,41 @@ struct AquaPlan: View {
                 }
                 addRow("Добавить платёж") {
                     editingPayment = RecurringPayment(title: "", amount: 0, category: .housing, startDate: Date())
+                }
+            }
+            .groupCard()
+        }
+    }
+
+    // MARK: Разовые расходы
+
+    private var plannedSection: some View {
+        AquaSection(title: "Разовые расходы") {
+            VStack(spacing: 0) {
+                ForEach(store.upcomingPlanned) { expense in
+                    let paid = expense.isPaid(transactions: store.transactions)
+                    Button { editingPlanned = expense } label: {
+                        HStack(spacing: 10) {
+                            AquaIcon(symbol: expense.category.symbol, color: expense.category.systemColor, size: 30)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(expense.title).font(Aqua.font(15, .bold)).foregroundStyle(Aqua.text).lineLimit(1)
+                                Text(paid ? "Оплачено" : expense.date.formatted(.dateTime.day().month(.wide).year()))
+                                    .font(Aqua.font(12)).foregroundStyle(paid ? Aqua.positive : Aqua.label)
+                            }
+                            Spacer()
+                            Text(Fmt.money(expense.amount)).font(Aqua.font(15)).foregroundStyle(Aqua.link)
+                            if paid {
+                                Image(systemName: "checkmark").font(.system(size: 14, weight: .heavy)).foregroundStyle(Aqua.positive)
+                            }
+                        }
+                        .padding(.horizontal, 12).padding(.vertical, 9)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    Divider().overlay(Aqua.line)
+                }
+                addRow("Добавить расход") {
+                    editingPlanned = PlannedExpense(title: "", amount: 0, category: .gifts, date: Date())
                 }
             }
             .groupCard()

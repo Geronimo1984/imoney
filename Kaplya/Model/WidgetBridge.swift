@@ -8,7 +8,7 @@ enum WidgetBridge {
         let now = Date()
         let current = Store.startOfMonth(now)
         let stats = Analytics.stats(store.transactions, month: current)
-        let forecast = Analytics.forecast(store.transactions, month: current)
+        let forecast = Analytics.forecast(store.transactions, month: current, reserved: store.plannedReserve(now: now))
         let income = max(stats.income, 1)
         let rings = [
             ((stats.byGroup[.needs] ?? 0) / income).double / 0.5,

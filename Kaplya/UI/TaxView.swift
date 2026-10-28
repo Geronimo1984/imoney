@@ -3,7 +3,14 @@ import SwiftUI
 /// Налоговый вычет 13%: что найдено в выписках, сколько вернут и как подать.
 struct TaxView: View {
     @Environment(Store.self) private var store
-    @State private var year: Int = Store.calendar.component(.year, from: Date())
+    @State private var year: Int
+    /// Год задан снаружи (из сводки) — не перескакиваем на последний.
+    private let fixedYear: Bool
+
+    init(year: Int? = nil) {
+        _year = State(initialValue: year ?? Store.calendar.component(.year, from: Date()))
+        fixedYear = year != nil
+    }
 
     var body: some View {
         let report = store.taxReport(year: year)
@@ -64,7 +71,7 @@ struct TaxView: View {
         }
         .navigationTitle("Налоговый вычет")
         .onAppear {
-            if let latest = store.taxYears.first { year = latest }
+            if !fixedYear, let latest = store.taxYears.first { year = latest }
         }
     }
 

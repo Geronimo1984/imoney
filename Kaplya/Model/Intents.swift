@@ -11,7 +11,8 @@ struct SpendTodayIntent: AppIntent {
     func perform() async throws -> some IntentResult & ProvidesDialog {
         let store = Store()
         let month = Store.startOfMonth(Date())
-        guard let f = Analytics.forecast(store.transactions, month: month), !store.transactions.isEmpty else {
+        guard let f = Analytics.forecast(store.transactions, month: month, reserved: store.plannedReserve()),
+              !store.transactions.isEmpty else {
             return .result(dialog: "Пока нет операций за этот месяц. Загрузите выписку в iMoney.")
         }
         if f.perDayLeft <= 0 {

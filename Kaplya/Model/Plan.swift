@@ -97,8 +97,10 @@ struct PlanSummary {
     var debts: Decimal
     var limits: Decimal
     var savings: Decimal
+    /// Разовые расходы этого месяца.
+    var planned: Decimal = 0
 
-    var allocated: Decimal { recurring + debts + limits + savings }
+    var allocated: Decimal { recurring + debts + limits + savings + planned }
     /// Долговая нагрузка: доля дохода, которая уходит на платежи по кредитам.
     var debtLoad: Double { income > 0 ? (debts / income).double : 0 }
     var free: Decimal { income - allocated }
@@ -113,7 +115,8 @@ extension Store {
                            recurring: recurring.reduce(0) { $0 + $1.monthly },
                            debts: debtsMonthly,
                            limits: limits.reduce(0) { $0 + $1.amount },
-                           savings: incomePlan.savings)
+                           savings: incomePlan.savings,
+                           planned: planned(in: month).reduce(0) { $0 + $1.amount })
     }
 
     /// Средний доход за последние три месяца с данными.

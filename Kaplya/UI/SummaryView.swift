@@ -4,13 +4,8 @@ import Charts
 /// «Сводка» в духе Здоровья и Apple Card: главный график, основные моменты, категории.
 struct SummaryView: View {
     @Environment(Store.self) private var store
-    @State private var period: Period = .month
+    @State private var period: Span.Kind = .month
     @State private var selectedDate: Date?
-
-    enum Period: String, CaseIterable, Identifiable {
-        case week = "Неделя", month = "Месяц", year = "Год"
-        var id: String { rawValue }
-    }
 
     struct Bar: Identifiable {
         var id = UUID()
@@ -20,7 +15,9 @@ struct SummaryView: View {
     }
 
     var body: some View {
-        let stats = Analytics.stats(store.transactions, month: store.month)
+        // Всё на экране — за выбранный период: график, основные моменты, полезное, категории
+        let span = Analytics.span(period, month: store.month, all: store.transactions)
+        let stats = Analytics.stats(store.transactions, range: span.range)
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 24) {
@@ -35,10 +32,10 @@ struct SummaryView: View {
                         }
                         .padding(.top, 60)
                     } else {
-                        spendingCard(stats)
-                        highlights
-                        tools
-                        categories(stats)
+                        spendingCard(stats, span)
+                        highlights(span)
+                        tools(span)
+                        categories(stats, span)
                     }
                     learn
                 }
@@ -46,6 +43,9 @@ struct SummaryView: View {
                 .padding(.bottom, 24)
             }
             .background(Color(.systemGroupedBackground))
+            // Выбранный на графике день из прошлого периода не должен оставаться выбранным
+            .onChange(of: period) { selectedDate = nil }
+            .onChange(of: store.month) { selectedDate = nil }
             .navigationTitle("Сводка")
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
@@ -64,8 +64,8 @@ struct SummaryView: View {
 
     // MARK: Главная карточка
 
-    private func spendingCard(_ stats: MonthStats) -> some View {
-        let bars = self.bars()
+    private func spendingCard(_ stats: MonthStats, _ span: Span) -> some View {
+        let bars = self.bars(stats, span)
         let total = bars.reduce(0) { $0 + $1.amount }
         let top = stats.byCategory.prefix(5).map(\.category)
         let selectedTotal = selectedDate.map { d in
@@ -75,7 +75,7 @@ struct SummaryView: View {
 
         return VStack(alignment: .leading, spacing: 14) {
             Picker("Период", selection: $period) {
-                ForEach(Period.allCases) { Text($0.rawValue).tag($0) }
+                ForEach(Span.Kind.allCases) { Text($0.rawValue).tag($0) }
             }
             .pickerStyle(.segmented)
 
@@ -85,7 +85,7 @@ struct SummaryView: View {
                 Text(Fmt.money(Decimal(selectedTotal ?? total)))
                     .font(.system(.largeTitle, design: .rounded).weight(.bold))
                     .contentTransition(.numericText())
-                Text(periodSubtitle).font(.subheadline).foregroundStyle(.secondary)
+                Text(subtitle(span)).font(.subheadline).foregroundStyle(.secondary)
             }
 
             Chart(bars) { bar in
@@ -117,32 +117,25 @@ struct SummaryView: View {
         .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
     }
 
-    private var periodSubtitle: String {
-        switch period {
-        case .week:  return "Последние 7 дней"
-        case .month: return Fmt.month(store.month)
-        case .year:  return "Последние 12 месяцев"
+    private func subtitle(_ span: Span) -> String {
+        let last = Store.calendar.date(byAdding: .day, value: -1, to: span.range.upperBound)!
+        switch span.kind {
+        case .week:
+            return "\(span.range.lowerBound.formatted(.dateTime.day().month(.wide))) — \(last.formatted(.dateTime.day().month(.wide)))"
+        case .month:
+            return Fmt.month(store.month)
+        case .year:
+            return "\(Fmt.month(span.range.lowerBound)) — \(Fmt.month(store.month))"
         }
     }
 
     /// Столбики по дням (или месяцам), разбитые на 5 главных категорий и «Другое».
-    private func bars() -> [Bar] {
+    private func bars(_ stats: MonthStats, _ span: Span) -> [Bar] {
         let cal = Store.calendar
-        let stats = Analytics.stats(store.transactions, month: store.month)
         let top = Set(stats.byCategory.prefix(5).map(\.category))
-        let range: (Date, Date)
-        switch period {
-        case .week:
-            let end = store.transactions.map(\.date).max() ?? Date()
-            range = (cal.date(byAdding: .day, value: -6, to: cal.startOfDay(for: end))!, end)
-        case .month:
-            range = (store.month, cal.date(byAdding: .month, value: 1, to: store.month)!)
-        case .year:
-            range = (cal.date(byAdding: .month, value: -11, to: store.month)!, cal.date(byAdding: .month, value: 1, to: store.month)!)
-        }
         var sums: [String: Double] = [:]
         var dates: [String: Date] = [:]
-        for t in store.transactions where t.category.isExpense && t.date >= range.0 && t.date < range.1 {
+        for t in store.transactions where t.category.isExpense && span.range.contains(t.date) {
             let bucket = period == .year ? Store.startOfMonth(t.date) : cal.startOfDay(for: t.date)
             let name = top.contains(t.category) ? t.category.title : "Другое"
             let key = "\(bucket.timeIntervalSince1970)|\(name)"
@@ -157,8 +150,8 @@ struct SummaryView: View {
 
     // MARK: Основные моменты
 
-    private var highlights: some View {
-        let insights = Analytics.insights(store.transactions, month: store.month).prefix(3)
+    private func highlights(_ span: Span) -> some View {
+        let insights = Analytics.insights(store.transactions, span: span, reserved: store.plannedReserve()).prefix(3)
         return VStack(alignment: .leading, spacing: 10) {
             Text("Основные моменты").font(.title2.weight(.bold))
             ForEach(Array(insights)) { insight in
@@ -198,9 +191,10 @@ struct SummaryView: View {
 
     // MARK: Полезное: итоги, вычет, кэшбэк
 
-    private var tools: some View {
-        let refund = store.taxReport(year: store.taxYears.first ?? Store.calendar.component(.year, from: Date())).refund
-        let cashback = store.cashbackReport()
+    private func tools(_ span: Span) -> some View {
+        let year = store.taxYear(for: store.month)
+        let refund = store.taxReport(year: year).refund
+        let cashback = store.cashbackTotal(in: span.range)
         return VStack(alignment: .leading, spacing: 10) {
             Text("Полезное").font(.title2.weight(.bold))
             NavigationLink { RecapView(month: store.recapMonth) } label: {
@@ -208,14 +202,14 @@ struct SummaryView: View {
                          "Сколько отложили, на чём сэкономили — карточка, которой можно поделиться")
             }
             HStack(spacing: 10) {
-                NavigationLink { TaxView() } label: {
+                NavigationLink { TaxView(year: year) } label: {
                     toolCard("percent", .green, refund > 0 ? "Вернуть \(Fmt.money(refund))" : "Налоговый вычет",
                              "13% с лечения, учёбы, спорта", compact: true)
                 }
                 NavigationLink { CashbackView() } label: {
                     toolCard("arrow.uturn.backward", .orange,
-                             cashback.month.total > 0 ? "+\(Fmt.money(cashback.month.total))" : "Кэшбэк",
-                             "Кэшбэк и проценты за месяц", compact: true)
+                             cashback > 0 ? "+\(Fmt.money(cashback))" : "Кэшбэк",
+                             "Кэшбэк и проценты \(span.forTitle)", compact: true)
                 }
             }
         }
@@ -272,13 +266,13 @@ struct SummaryView: View {
 
     // MARK: Категории
 
-    private func categories(_ stats: MonthStats) -> some View {
+    private func categories(_ stats: MonthStats, _ span: Span) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("Категории").font(.title2.weight(.bold))
             VStack(spacing: 0) {
                 ForEach(Array(stats.byCategory.prefix(8).enumerated()), id: \.element.id) { index, item in
                     NavigationLink {
-                        CategoryDetail(category: item.category)
+                        CategoryDetail(category: item.category, range: span.range, subtitle: subtitle(span))
                     } label: {
                         HStack(spacing: 12) {
                             CategoryBadge(category: item.category)
@@ -330,9 +324,13 @@ struct InsightDetail: View {
 struct CategoryDetail: View {
     @Environment(Store.self) private var store
     var category: Category
+    /// Период из сводки; по умолчанию — выбранный месяц.
+    var range: Range<Date>? = nil
+    var subtitle: String? = nil
 
     var body: some View {
-        let items = store.monthTransactions.filter { $0.category == category }.sorted { $0.date > $1.date }
+        let source = range.map { r in store.transactions.filter { r.contains($0.date) } } ?? store.monthTransactions
+        let items = source.filter { $0.category == category }.sorted { $0.date > $1.date }
         let total = items.reduce(Decimal(0)) { $0 + $1.expenseValue }
         List {
             Section {
@@ -340,7 +338,7 @@ struct CategoryDetail: View {
                     CategoryBadge(category: category, size: 52)
                     VStack(alignment: .leading) {
                         Text(Fmt.money(total)).font(.title.weight(.bold))
-                        Text("\(items.count) \(Fmt.plural(items.count, "операция", "операции", "операций")) · \(Fmt.month(store.month))")
+                        Text("\(items.count) \(Fmt.plural(items.count, "операция", "операции", "операций")) · \(subtitle ?? Fmt.month(store.month))")
                             .font(.subheadline).foregroundStyle(.secondary)
                     }
                 }

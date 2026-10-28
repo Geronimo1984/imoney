@@ -54,6 +54,11 @@ enum Reminders {
                 add("rec.\(payment.id)", "Завтра платёж: \(payment.title)", Fmt.money(payment.amount), on: day)
             }
         }
+        for expense in store.planned where !expense.isPaid(transactions: store.transactions) {
+            if let day = cal.date(byAdding: .day, value: -1, to: expense.date) {
+                add("planned.\(expense.id)", "Завтра запланировано: \(expense.title)", Fmt.money(expense.amount), on: day)
+            }
+        }
         notifyExceededLimits(store, center: center)
     }
 
@@ -101,7 +106,7 @@ struct RemindersSection: View {
         } header: {
             Text("Уведомления")
         } footer: {
-            Text("За 2 дня до платежа по кредиту, накануне подписки, за 3 дня до конца льготного периода кредитки и когда превышен лимит.")
+            Text("За 2 дня до платежа по кредиту, накануне подписки и разового расхода, за 3 дня до конца льготного периода кредитки и когда превышен лимит.")
         }
     }
 }
@@ -124,7 +129,7 @@ struct AquaRemindersCard: View {
                 Text("Напоминания").font(Aqua.font(15, .bold)).foregroundStyle(Aqua.text)
             }
             .tint(Aqua.blue)
-            Text("О платежах по кредитам и подпискам, конце льготного периода и превышенных лимитах.")
+            Text("О платежах по кредитам и подпискам, разовых расходах, конце льготного периода и превышенных лимитах.")
                 .font(Aqua.font(12)).foregroundStyle(Aqua.label)
         }
         .padding(12)

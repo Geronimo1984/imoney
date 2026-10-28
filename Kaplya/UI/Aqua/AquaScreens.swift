@@ -178,7 +178,8 @@ struct AquaInsights: View {
     @State private var showTax = false
 
     var body: some View {
-        let insights = Analytics.insights(store.transactions, month: store.month)
+        let insights = Analytics.insights(store.transactions, span: Analytics.span(.month, month: store.month, all: store.transactions),
+                                          reserved: store.plannedReserve())
         let subs = Analytics.subscriptions(store.transactions)
         let merchants = Analytics.topMerchants(store.transactions, month: store.month)
         VStack(spacing: 0) {
@@ -249,11 +250,11 @@ struct AquaInsights: View {
             }
         }
         .sheet(isPresented: $showRecap) { SystemSheet { RecapView(month: store.recapMonth) } }
-        .sheet(isPresented: $showTax) { SystemSheet { TaxView() } }
+        .sheet(isPresented: $showTax) { SystemSheet { TaxView(year: store.taxYear(for: store.month)) } }
     }
 
     private var refundText: String {
-        let r = store.taxReport(year: store.taxYears.first ?? Store.calendar.component(.year, from: Date())).refund
+        let r = store.taxReport(year: store.taxYear(for: store.month)).refund
         return r > 0 ? Fmt.money(r) : ""
     }
 

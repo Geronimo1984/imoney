@@ -222,11 +222,45 @@ final class TapTests: XCTestCase {
         sleep(1)
         choose.tap()
         let openButton = app.buttons.matching(NSPredicate(format: "label IN %@", ["Open", "Открыть"])).firstMatch
-        let opened = openButton.waitForExistence(timeout: 5)
+        // Выбор папки — отдельный процесс, его кнопки появляются не сразу
+        let opened = openButton.waitForExistence(timeout: 15)
         // Выбор папки — отдельный процесс, снимок окна приложения его не видит
         if let dir = ProcessInfo.processInfo.environment["SHOTS"] {
             try? XCUIScreen.main.screenshot().pngRepresentation.write(to: URL(fileURLWithPath: dir + "folder_picker.png"))
         }
         XCTAssertTrue(opened, "Не открылся выбор папки")
+    }
+
+    func testAddPlannedExpense() {
+        let app = launch(["-tab=plan"])
+        let add = app.buttons["Добавить расход"]
+        for _ in 0..<10 where !add.isHittable { app.swipeUp() }
+        add.tap()
+        XCTAssertTrue(app.navigationBars["Новый расход"].waitForExistence(timeout: 3))
+        let title = app.textFields["Название"]
+        title.tap()
+        title.typeText("Ремонт ноутбука")
+        let amount = app.textFields["0"]
+        amount.tap()
+        amount.typeText("12000")
+        app.navigationBars["Новый расход"].buttons["Добавить"].tap()
+        let added = app.staticTexts["Ремонт ноутбука"]
+        for _ in 0..<6 where !added.waitForExistence(timeout: 1) { app.swipeDown() }
+        XCTAssertTrue(added.exists, "Расход не появился в списке")
+        XCTAssertTrue(app.staticTexts["Разовые расходы"].exists || app.staticTexts["РАЗОВЫЕ РАСХОДЫ"].exists)
+        shot(app, "planned")
+    }
+
+    func testSummaryFollowsPeriod() {
+        let app = launch([])
+        let month = app.staticTexts["Кэшбэк и проценты за месяц"]
+        for _ in 0..<3 where !month.exists { app.swipeUp() }
+        XCTAssertTrue(month.exists)
+        for _ in 0..<3 { app.swipeDown() }
+        app.buttons["Год"].tap()
+        let year = app.staticTexts["Кэшбэк и проценты за год"]
+        for _ in 0..<3 where !year.exists { app.swipeUp() }
+        XCTAssertTrue(year.exists, "«Полезное» не пересчиталось за год")
+        shot(app, "summary_year")
     }
 }

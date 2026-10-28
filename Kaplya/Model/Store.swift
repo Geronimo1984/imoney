@@ -7,6 +7,7 @@ final class Store {
     var rules: [CategoryRule] = []
     var imports: [ImportRecord] = []
     var recurring: [RecurringPayment] = []
+    var planned: [PlannedExpense] = []
     var limits: [BudgetLimit] = []
     var incomePlan = IncomePlan()
     var debts: [Debt] = []
@@ -27,18 +28,20 @@ final class Store {
         var rules: [CategoryRule] = []
         var imports: [ImportRecord] = []
         var recurring: [RecurringPayment] = []
+        var planned: [PlannedExpense] = []
         var limits: [BudgetLimit] = []
         var incomePlan = IncomePlan()
         var debts: [Debt] = []
         var goals: [SavingsGoal] = []
 
         init(transactions: [Transaction], rules: [CategoryRule], imports: [ImportRecord],
-             recurring: [RecurringPayment], limits: [BudgetLimit], incomePlan: IncomePlan, debts: [Debt],
+             recurring: [RecurringPayment], planned: [PlannedExpense], limits: [BudgetLimit], incomePlan: IncomePlan, debts: [Debt],
              goals: [SavingsGoal]) {
             self.transactions = transactions
             self.rules = rules
             self.imports = imports
             self.recurring = recurring
+            self.planned = planned
             self.limits = limits
             self.incomePlan = incomePlan
             self.debts = debts
@@ -52,6 +55,7 @@ final class Store {
             rules = try c.decodeIfPresent([CategoryRule].self, forKey: .rules) ?? []
             imports = try c.decodeIfPresent([ImportRecord].self, forKey: .imports) ?? []
             recurring = try c.decodeIfPresent([RecurringPayment].self, forKey: .recurring) ?? []
+            planned = try c.decodeIfPresent([PlannedExpense].self, forKey: .planned) ?? []
             limits = try c.decodeIfPresent([BudgetLimit].self, forKey: .limits) ?? []
             incomePlan = try c.decodeIfPresent(IncomePlan.self, forKey: .incomePlan) ?? IncomePlan()
             debts = try c.decodeIfPresent([Debt].self, forKey: .debts) ?? []
@@ -89,6 +93,7 @@ final class Store {
         rules = state.rules
         imports = state.imports
         recurring = state.recurring
+        planned = state.planned
         limits = state.limits
         incomePlan = state.incomePlan
         debts = state.debts
@@ -99,7 +104,7 @@ final class Store {
         changes += 1
         guard persistent else { return }
         let state = SavedState(transactions: transactions, rules: rules, imports: imports,
-                               recurring: recurring, limits: limits, incomePlan: incomePlan, debts: debts,
+                               recurring: recurring, planned: planned, limits: limits, incomePlan: incomePlan, debts: debts,
                                goals: goals)
         if let data = try? JSONEncoder().encode(state) {
             try? data.write(to: fileURL, options: [.atomic, .completeFileProtection])
@@ -245,6 +250,7 @@ final class Store {
         rules = []
         imports = []
         recurring = []
+        planned = []
         limits = []
         incomePlan = IncomePlan()
         debts = []
@@ -266,6 +272,7 @@ final class Store {
     /// Демо-план: регулярные платежи из выписок (кроме двух — их предложит подсказка) и план по средним тратам.
     private func seedDemoPlan() {
         recurring = []
+        planned = []
         limits = []
         incomePlan = IncomePlan()
         for payment in suggestedRecurring().dropLast(2) {
@@ -307,6 +314,14 @@ final class Store {
         limits = plan.limits
         incomePlan.savings = plan.savings
 
+        planned = [
+            PlannedExpense(title: "Подарок маме", amount: 5_000, category: .gifts,
+                           date: cal.date(byAdding: .day, value: 6, to: Date()) ?? Date()),
+            PlannedExpense(title: "ОСАГО", amount: 9_800, category: .car,
+                           date: cal.date(byAdding: .day, value: 20, to: Date()) ?? Date()),
+            PlannedExpense(title: "Отпуск", amount: 60_000, category: .travel,
+                           date: cal.date(byAdding: .day, value: 45, to: Date()) ?? Date())
+        ]
         goals = [
             SavingsGoal(title: "Подушка безопасности", symbol: "lifepreserver.fill", target: 300_000, saved: 85_000,
                         deadline: cal.date(byAdding: .month, value: 12, to: Date()), colorIndex: 1),

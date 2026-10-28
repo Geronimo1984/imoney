@@ -89,7 +89,7 @@ struct AquaOverview: View {
                                 .groupCard()
                             }
                         }
-                        if let f = Analytics.forecast(store.transactions, month: store.month) {
+                        if let f = store.forecast() {
                             AquaSection(title: "Прогноз на месяц") {
                                 VStack(alignment: .leading, spacing: 10) {
                                     AquaProgress(value: stats.income > 0 ? (f.spent / stats.income).double : 0,
