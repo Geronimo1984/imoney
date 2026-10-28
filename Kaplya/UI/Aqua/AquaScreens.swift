@@ -187,7 +187,7 @@ struct AquaInsights: View {
             ScrollView {
                 VStack(spacing: 16) {
                     VStack(spacing: 0) {
-                        AquaLinkRow(symbol: "rosette", color: .purple, title: "Итоги \(Fmt.monthGenitiveOnly(store.recapMonth))") { showRecap = true }
+                        AquaLinkRow(symbol: "rosette", color: .purple, title: "Итоги \(Fmt.monthGenitiveOnly(store.month))") { showRecap = true }
                         Divider().overlay(Aqua.line)
                         AquaLinkRow(symbol: "percent", color: .green, title: "Налоговый вычет",
                                     value: refundText) { showTax = true }
@@ -249,7 +249,7 @@ struct AquaInsights: View {
                 .padding(10)
             }
         }
-        .sheet(isPresented: $showRecap) { SystemSheet { RecapView(month: store.recapMonth) } }
+        .sheet(isPresented: $showRecap) { SystemSheet { RecapView(month: store.month) } }
         .sheet(isPresented: $showTax) { SystemSheet { TaxView(year: store.taxYear(for: store.month)) } }
     }
 

@@ -197,9 +197,11 @@ struct SummaryView: View {
         let cashback = store.cashbackTotal(in: span.range)
         return VStack(alignment: .leading, spacing: 10) {
             Text("Полезное").font(.title2.weight(.bold))
-            NavigationLink { RecapView(month: store.recapMonth) } label: {
-                toolCard("rosette", .purple, "Итоги \(Fmt.monthGenitiveOnly(store.recapMonth))",
-                         "Сколько отложили, на чём сэкономили — карточка, которой можно поделиться")
+            NavigationLink { RecapView(month: store.month) } label: {
+                toolCard("rosette", .purple, "Итоги \(Fmt.monthGenitiveOnly(store.month))",
+                         Analytics.isCurrent(store.month)
+                            ? "Месяц ещё идёт — итоги на сегодня: сколько отложили, на чём сэкономили"
+                            : "Сколько отложили, на чём сэкономили — карточка, которой можно поделиться")
             }
             HStack(spacing: 10) {
                 NavigationLink { TaxView(year: year) } label: {

@@ -42,7 +42,7 @@ struct RecapCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
             VStack(alignment: .leading, spacing: 2) {
-                Text("ИТОГИ МЕСЯЦА").font(.caption.weight(.bold)).foregroundStyle(.white.opacity(0.7))
+                Text(Analytics.isCurrent(recap.month) ? "ИТОГИ НА СЕГОДНЯ" : "ИТОГИ МЕСЯЦА").font(.caption.weight(.bold)).foregroundStyle(.white.opacity(0.7))
                 Text(Fmt.month(recap.month)).font(.system(size: 30, weight: .bold, design: .rounded)).foregroundStyle(.white)
             }
             HStack(spacing: 12) {
@@ -56,7 +56,7 @@ struct RecapCard: View {
             }
             VStack(alignment: .leading, spacing: 8) {
                 if let cut = recap.bestCut {
-                    line("arrow.down.right", .green, "\(cut.0.title): на \(Fmt.money(cut.1)) меньше, чем в прошлом месяце")
+                    line("arrow.down.right", .green, "\(cut.0.title): на \(Fmt.money(cut.1)) меньше, чем \(Analytics.isCurrent(recap.month) ? "за те же дни прошлого месяца" : "в прошлом месяце")")
                 }
                 if let top = recap.topCategory {
                     line(top.category.symbol, .orange, "Больше всего — \(top.category.title.lowercased()), \(Fmt.money(top.amount))")

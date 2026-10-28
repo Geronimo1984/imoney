@@ -18,17 +18,12 @@ struct MonthRecap {
 }
 
 extension Store {
-    /// Месяц для итогов: прошлый, если смотрим текущий; иначе выбранный.
-    var recapMonth: Date {
-        Analytics.isCurrent(month)
-            ? (Store.calendar.date(byAdding: .month, value: -1, to: month) ?? month)
-            : month
-    }
-
     func recap(for m: Date) -> MonthRecap {
         let cal = Store.calendar
         let s = Analytics.stats(transactions, month: m)
-        let prev = Analytics.stats(transactions, month: cal.date(byAdding: .month, value: -1, to: m) ?? m)
+        // Месяц ещё идёт — сравниваем с тем же числом дней прошлого месяца, а не со всем месяцем
+        let today = Analytics.isCurrent(m) ? cal.component(.day, from: Date()) : nil
+        let prev = Analytics.stats(transactions, month: cal.date(byAdding: .month, value: -1, to: m) ?? m, upToDay: today)
         var best: (Category, Decimal)?
         for item in prev.byCategory where item.category != .transfersOut {
             let now = s.byCategory.first { $0.category == item.category }?.amount ?? 0

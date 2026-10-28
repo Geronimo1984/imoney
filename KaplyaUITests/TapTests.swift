@@ -161,6 +161,8 @@ final class TapTests: XCTestCase {
         open(app, "Итоги")
         XCTAssertTrue(app.navigationBars["Итоги месяца"].waitForExistence(timeout: 3))
         XCTAssertTrue(app.buttons["Поделиться"].waitForExistence(timeout: 3))
+        // Демо-данные — за текущий месяц: итоги за него, а не за прошлый
+        XCTAssertTrue(app.staticTexts["ИТОГИ НА СЕГОДНЯ"].exists, "Итоги не за выбранный месяц")
         shot(app, "recap")
     }
 
