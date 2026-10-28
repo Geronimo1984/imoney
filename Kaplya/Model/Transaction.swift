@@ -59,7 +59,17 @@ struct Transaction: Codable, Identifiable, Hashable {
     }
 
     /// Получатель или магазин без мусора — ключ для правил и подписок.
-    var counterparty: String { Transaction.normalize(title) }
+    /// Нормализация — пять регулярных выражений; сводка спрашивает получателя тысячи раз за перерисовку,
+    /// поэтому результат кэшируется по исходному названию (NSCache потокобезопасен).
+    var counterparty: String {
+        let key = title as NSString
+        if let cached = Transaction.counterpartyCache.object(forKey: key) { return cached as String }
+        let value = Transaction.normalize(title)
+        Transaction.counterpartyCache.setObject(value as NSString, forKey: key)
+        return value
+    }
+
+    private static let counterpartyCache = NSCache<NSString, NSString>()
 
     static func normalize(_ text: String) -> String {
         var s = text.precomposedStringWithCanonicalMapping.lowercased()

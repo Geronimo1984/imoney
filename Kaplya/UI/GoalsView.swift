@@ -16,8 +16,10 @@ struct GoalsSection: View {
                         Button("Пополнить", systemImage: "plus") { contributing = goal }.tint(.green)
                     }
                     .swipeActions {
-                        Button("Удалить", role: .destructive) { store.deleteGoal(goal.id) }
+                        Button("Удалить", role: .destructive) { Haptic.delete(); Motion.animate { store.deleteGoal(goal.id) } }
                     }
+                    // Цель только что достигнута
+                    .sensoryFeedback(.success, trigger: goal.isReached) { old, new in !old && new }
             }
             Button { editing = SavingsGoal(title: "", target: 0, deadline: Store.calendar.date(byAdding: .month, value: 6, to: Date())) } label: {
                 Label("Новая цель", systemImage: "plus.circle.fill")
@@ -25,7 +27,9 @@ struct GoalsSection: View {
             // Листы — на строке: у раздела списка целиком они не открываются
             .sheet(item: $editing) { goal in GoalEditor(goal: goal, isNew: !store.goals.contains { $0.id == goal.id }) }
             .sheet(item: $contributing) { goal in
-                AmountEditor(title: goal.title, caption: "Сколько отложили на эту цель", value: 0) { store.contribute($0, to: goal.id) }
+                AmountEditor(title: goal.title, caption: "Сколько отложили на эту цель", value: 0) { amount in
+                    Motion.animate { store.contribute(amount, to: goal.id) }
+                }
             }
         } header: {
             Text("Цели")
@@ -48,6 +52,8 @@ struct GoalRow: View {
                 PaidRing(share: goal.share, color: goal.color, lineWidth: 5)
                 Image(systemName: goal.isReached ? "checkmark" : goal.symbol)
                     .font(.system(size: 14, weight: .semibold)).foregroundStyle(goal.color)
+                    .contentTransition(.symbolEffect(.replace))
+                    .symbolEffect(.bounce, value: goal.isReached)
             }
             .frame(width: 40, height: 40)
             VStack(alignment: .leading, spacing: 2) {
@@ -57,6 +63,7 @@ struct GoalRow: View {
             Spacer()
             VStack(alignment: .trailing, spacing: 2) {
                 Text(Fmt.money(goal.saved)).foregroundStyle(.primary)
+                    .contentTransition(.numericText())
                 Text("из \(Fmt.money(goal.target))").font(.caption).foregroundStyle(.secondary)
             }
         }

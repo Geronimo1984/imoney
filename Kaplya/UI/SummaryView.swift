@@ -6,9 +6,13 @@ struct SummaryView: View {
     @Environment(Store.self) private var store
     @State private var period: Span.Kind = .month
     @State private var selectedDate: Date?
+    /// Столбики при первом показе вырастают от нуля
+    @State private var chartGrown = false
+    @Namespace private var zoom
 
     struct Bar: Identifiable {
-        var id = UUID()
+        /// Постоянный id — чтобы при смене периода столбики перетекали, а не появлялись заново
+        var id: String { "\(date.timeIntervalSince1970)|\(category)" }
         var date: Date
         var category: String
         var amount: Double
@@ -24,6 +28,7 @@ struct SummaryView: View {
                     if store.transactions.isEmpty {
                         ContentUnavailableView {
                             Label("Пока нет операций", systemImage: "chart.bar.xaxis")
+                                .emptyStateSymbol()
                         } description: {
                             Text("Загрузите выписку Т-Банка или Сбера на вкладке «Счета» — здесь появятся траты по категориям и подсказки.")
                         } actions: {
@@ -44,8 +49,8 @@ struct SummaryView: View {
             }
             .background(Color(.systemGroupedBackground))
             // Выбранный на графике день из прошлого периода не должен оставаться выбранным
-            .onChange(of: period) { selectedDate = nil }
-            .onChange(of: store.month) { selectedDate = nil }
+            .onChange(of: period) { selectedDate = nil; regrowChart() }
+            .onChange(of: store.month) { selectedDate = nil; regrowChart() }
             .navigationTitle("Сводка")
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
@@ -68,12 +73,14 @@ struct SummaryView: View {
         let bars = self.bars(stats, span)
         let total = bars.reduce(0) { $0 + $1.amount }
         let top = stats.byCategory.prefix(5).map(\.category)
+        let colors = Category.distinctColors(top)
         let selectedTotal = selectedDate.map { d in
             bars.filter { Store.calendar.isDate($0.date, equalTo: d, toGranularity: period == .year ? .month : .day) }
                 .reduce(0) { $0 + $1.amount }
         }
 
         return VStack(alignment: .leading, spacing: 14) {
+            // Анимируется только график и сумма — остальная страница меняется сразу, без тяжёлой перекладки
             Picker("Период", selection: $period) {
                 ForEach(Span.Kind.allCases) { Text($0.rawValue).tag($0) }
             }
@@ -85,12 +92,13 @@ struct SummaryView: View {
                 Text(Fmt.money(Decimal(selectedTotal ?? total)))
                     .font(.system(.largeTitle, design: .rounded).weight(.bold))
                     .contentTransition(.numericText())
+                    .motion(.snappy(duration: 0.3), value: selectedTotal ?? total)
                 Text(subtitle(span)).font(.subheadline).foregroundStyle(.secondary)
             }
 
             Chart(bars) { bar in
                 BarMark(x: .value("Дата", bar.date, unit: period == .year ? .month : .day),
-                        y: .value("Сумма", bar.amount))
+                        y: .value("Сумма", chartGrown ? bar.amount : 0))
                     .foregroundStyle(by: .value("Категория", bar.category))
                     .cornerRadius(3)
                 if let selectedDate {
@@ -100,7 +108,7 @@ struct SummaryView: View {
                 }
             }
             .chartForegroundStyleScale(domain: top.map(\.title) + ["Другое"],
-                                       range: top.map(\.systemColor) + [Color(.systemGray3)])
+                                       range: top.map { colors[$0] ?? $0.systemColor } + [Color(.systemGray3)])
             .chartXSelection(value: $selectedDate)
             .chartLegend(position: .bottom, alignment: .leading, spacing: 12)
             .chartYAxis {
@@ -112,9 +120,30 @@ struct SummaryView: View {
                 }
             }
             .frame(height: 220)
+            // Шкала сразу итоговая: растут только столбики, подписи справа не «плывут»
+            .chartYScale(domain: 0...yMax(bars))
+            .onAppear { Motion.animate(.smooth(duration: 0.5)) { chartGrown = true } }
         }
         .padding(16)
         .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+    }
+
+    /// Высота самого высокого столбика с небольшим запасом сверху.
+    private func yMax(_ bars: [Bar]) -> Double {
+        let stacks = Dictionary(grouping: bars, by: \.date).values.map { $0.reduce(0) { $0 + $1.amount } }
+        return max(stacks.max() ?? 0, 1) * 1.08
+    }
+
+    /// Новый период — столбики заново быстро вырастают, как в «Здоровье».
+    /// Перетекание дней в месяцы выглядит криво, поэтому старые столбики не морфим.
+    private func regrowChart() {
+        guard !Motion.reduced else { return }
+        var reset = SwiftUI.Transaction()
+        reset.disablesAnimations = true
+        withTransaction(reset) { chartGrown = false }
+        Task { @MainActor in
+            withAnimation(.smooth(duration: 0.45)) { chartGrown = true }
+        }
     }
 
     private func subtitle(_ span: Span) -> String {
@@ -142,10 +171,13 @@ struct SummaryView: View {
             sums[key, default: 0] += t.expenseValue.double
             dates[key] = bucket
         }
-        return sums.compactMap { key, value in
+        // Порядок слоёв одинаковый во всех столбиках: самая крупная категория снизу, «Другое» сверху
+        let order = stats.byCategory.prefix(5).map(\.category.title) + ["Другое"]
+        return sums.compactMap { key, value -> Bar? in
             guard value > 0, let date = dates[key] else { return nil }
             return Bar(date: date, category: String(key.split(separator: "|")[1]), amount: value)
         }
+        .sorted { (order.firstIndex(of: $0.category) ?? 9) < (order.firstIndex(of: $1.category) ?? 9) }
     }
 
     // MARK: Основные моменты
@@ -156,7 +188,7 @@ struct SummaryView: View {
             Text("Основные моменты").font(.title2.weight(.bold))
             ForEach(Array(insights)) { insight in
                 NavigationLink {
-                    InsightDetail(insight: insight)
+                    InsightDetail(insight: insight).zoomTransition(insight.title, in: zoom)
                 } label: {
                     VStack(alignment: .leading, spacing: 8) {
                         HStack {
@@ -175,6 +207,7 @@ struct SummaryView: View {
                     .padding(16)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    .zoomSource(insight.title, in: zoom)
                 }
                 .buttonStyle(.plain)
             }
@@ -197,21 +230,24 @@ struct SummaryView: View {
         let cashback = store.cashbackTotal(in: span.range)
         return VStack(alignment: .leading, spacing: 10) {
             Text("Полезное").font(.title2.weight(.bold))
-            NavigationLink { RecapView(month: store.month) } label: {
+            NavigationLink { RecapView(month: store.month).zoomTransition("recap", in: zoom) } label: {
                 toolCard("rosette", .purple, "Итоги \(Fmt.monthGenitiveOnly(store.month))",
                          Analytics.isCurrent(store.month)
                             ? "Месяц ещё идёт — итоги на сегодня: сколько отложили, на чём сэкономили"
                             : "Сколько отложили, на чём сэкономили — карточка, которой можно поделиться")
+                    .zoomSource("recap", in: zoom)
             }
             HStack(spacing: 10) {
-                NavigationLink { TaxView(year: year) } label: {
+                NavigationLink { TaxView(year: year).zoomTransition("tax", in: zoom) } label: {
                     toolCard("percent", .green, refund > 0 ? "Вернуть \(Fmt.money(refund))" : "Налоговый вычет",
                              "13% с лечения, учёбы, спорта", compact: true)
+                        .zoomSource("tax", in: zoom)
                 }
-                NavigationLink { CashbackView() } label: {
+                NavigationLink { CashbackView().zoomTransition("cashback", in: zoom) } label: {
                     toolCard("arrow.uturn.backward", .orange,
                              cashback > 0 ? "+\(Fmt.money(cashback))" : "Кэшбэк",
                              "Кэшбэк и проценты \(span.forTitle)", compact: true)
+                        .zoomSource("cashback", in: zoom)
                 }
             }
         }
@@ -243,7 +279,7 @@ struct SummaryView: View {
             ScrollView(.horizontal) {
                 HStack(spacing: 12) {
                     ForEach(Lesson.all) { lesson in
-                        NavigationLink { LessonView(lesson: lesson) } label: {
+                        NavigationLink { LessonView(lesson: lesson).zoomTransition(lesson.id, in: zoom) } label: {
                             VStack(alignment: .leading, spacing: 10) {
                                 Image(systemName: lesson.symbol)
                                     .font(.title2.weight(.semibold))
@@ -257,11 +293,14 @@ struct SummaryView: View {
                             .padding(14)
                             .frame(width: 160, height: 140, alignment: .leading)
                             .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                            .zoomSource(lesson.id, in: zoom)
                         }
                         .buttonStyle(.plain)
                     }
                 }
             }
+            // Карточки уезжают до края экрана, а не обрезаются по отступу страницы
+            .scrollClipDisabled()
             .scrollIndicators(.hidden)
         }
     }
@@ -269,29 +308,33 @@ struct SummaryView: View {
     // MARK: Категории
 
     private func categories(_ stats: MonthStats, _ span: Span) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
+        // Те же цвета, что на графике, — чтобы столбики сразу находились в списке
+        let colors = Category.distinctColors(stats.byCategory.prefix(8).map(\.category))
+        return VStack(alignment: .leading, spacing: 10) {
             Text("Категории").font(.title2.weight(.bold))
             VStack(spacing: 0) {
                 ForEach(Array(stats.byCategory.prefix(8).enumerated()), id: \.element.id) { index, item in
                     NavigationLink {
                         CategoryDetail(category: item.category, range: span.range, subtitle: subtitle(span))
+                            .zoomTransition(item.category, in: zoom)
                     } label: {
                         HStack(spacing: 12) {
-                            CategoryBadge(category: item.category)
+                            CategoryBadge(category: item.category, color: colors[item.category])
                             VStack(alignment: .leading, spacing: 4) {
                                 HStack {
                                     Text(item.category.title).foregroundStyle(.primary)
                                     Spacer()
                                     Text(Fmt.money(item.amount)).foregroundStyle(.secondary)
                                 }
-                                ProgressView(value: (item.amount / (stats.byCategory.first?.amount ?? 1)).double)
-                                    .tint(item.category.systemColor)
+                                GrowingProgress(value: (item.amount / (stats.byCategory.first?.amount ?? 1)).double,
+                                                tint: colors[item.category] ?? item.category.systemColor)
                             }
                             Image(systemName: "chevron.right").font(.footnote.weight(.semibold)).foregroundStyle(.tertiary)
                         }
                         .padding(.horizontal, 16)
                         .padding(.vertical, 11)
                         .contentShape(Rectangle())
+                        .zoomSource(item.category, in: zoom)
                     }
                     .buttonStyle(.plain)
                     if index < min(stats.byCategory.count, 8) - 1 {
@@ -306,12 +349,14 @@ struct SummaryView: View {
 
 struct InsightDetail: View {
     var insight: Insight
+    @State private var appeared = false
 
     var body: some View {
         List {
             Section {
                 VStack(alignment: .leading, spacing: 10) {
                     Image(systemName: insight.symbol).font(.largeTitle).foregroundStyle(.tint)
+                        .symbolEffect(.bounce, value: appeared)
                     Text(insight.title).font(.title2.weight(.bold))
                     Text(insight.text).foregroundStyle(.secondary)
                 }
@@ -320,6 +365,7 @@ struct InsightDetail: View {
         }
         .navigationTitle("Основной момент")
         .navigationBarTitleDisplayMode(.inline)
+        .onAppear { if !Motion.reduced { appeared = true } }
     }
 }
 

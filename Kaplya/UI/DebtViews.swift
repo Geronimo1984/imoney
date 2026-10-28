@@ -7,6 +7,13 @@ struct PaidRing: View {
     var lineWidth: CGFloat = 5
 
     var body: some View {
+        // Кольцо замыкается до своей доли при появлении и плавно — после пополнения или платежа
+        Growing(value: share) { shown in
+            ring(shown)
+        }
+    }
+
+    private func ring(_ share: Double) -> some View {
         ZStack {
             Circle().stroke(color.opacity(0.2), lineWidth: lineWidth)
             Circle()

@@ -30,6 +30,9 @@ struct PlanView: View {
                             Text(Fmt.money(forecast.perDayLeft))
                                 .font(.system(size: 40, weight: .bold, design: .rounded))
                                 .foregroundStyle(forecast.perDayLeft > 0 ? Color.primary : Color.red)
+                                // Отметили расход оплаченным или поменяли план — сумма перещёлкивается
+                                .contentTransition(.numericText())
+                                .motion(value: forecast.perDayLeft)
                             Text("Чтобы уложиться в доход до конца месяца. Осталось \(forecast.daysLeft) \(Fmt.plural(forecast.daysLeft, "день", "дня", "дней")).")
                                 .font(.subheadline).foregroundStyle(.secondary)
                         }
@@ -87,17 +90,22 @@ struct PlanView: View {
                     Text(plan.incomeIsExpected ? "ОЖИДАЕМЫЙ ДОХОД" : "ДОХОД ЗА \(Fmt.month(store.month).uppercased())")
                         .font(.caption.weight(.semibold)).foregroundStyle(.secondary)
                     Text(Fmt.money(plan.income)).font(.system(size: 34, weight: .bold, design: .rounded))
+                        .contentTransition(.numericText())
+                        .motion(value: plan.income)
                 }
-                // Полоса распределения — как полоса хранилища в Настройках
-                GeometryReader { geo in
-                    let total = max(plan.income, plan.allocated, 1)
-                    HStack(spacing: 2) {
-                        ForEach(parts.filter { $0.1 > 0 }, id: \.0) { part in
-                            Rectangle().fill(part.2)
-                                .frame(width: max(3, geo.size.width * (part.1 / total).double - 2))
+                // Полоса распределения — как полоса хранилища в Настройках; при открытии заполняется слева направо
+                Growing(value: 1) { fill in
+                    GeometryReader { geo in
+                        let total = max(plan.income, plan.allocated, 1)
+                        HStack(spacing: 2) {
+                            ForEach(parts.filter { $0.1 > 0 }, id: \.0) { part in
+                                Rectangle().fill(part.2)
+                                    .frame(width: max(3, geo.size.width * fill * (part.1 / total).double - 2))
+                            }
                         }
+                        .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
                     }
-                    .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
+                    .motion(value: plan.allocated)
                 }
                 .frame(height: 18)
                 VStack(spacing: 6) {
@@ -107,6 +115,8 @@ struct PlanView: View {
                             Text(part.0).font(.subheadline)
                             Spacer()
                             Text(Fmt.money(part.1)).font(.subheadline).foregroundStyle(.secondary)
+                                .contentTransition(.numericText())
+                                .motion(value: part.1)
                         }
                     }
                 }
@@ -183,14 +193,16 @@ struct PlanView: View {
                                     .font(.subheadline)
                                     .foregroundStyle(share > 1 ? Color.red : .secondary)
                             }
-                            ProgressView(value: min(share, 1))
-                                .tint(share > 1 ? .red : (share > 0.8 ? .orange : limit.category.systemColor))
+                            GrowingProgress(value: min(share, 1),
+                                            tint: share > 1 ? .red : (share > 0.8 ? .orange : limit.category.systemColor))
                         }
                     }
                 }
                 .foregroundStyle(.primary)
+                // Лимит только что превышен — короткое предупреждение
+                .sensoryFeedback(.warning, trigger: share > 1) { old, new in !old && new }
                 .swipeActions {
-                    Button("Удалить", role: .destructive) { store.setLimit(limit.category, nil) }
+                    Button("Удалить", role: .destructive) { Haptic.delete(); Motion.animate { store.setLimit(limit.category, nil) } }
                 }
             }
             Button { addingLimit = true } label: {
@@ -227,7 +239,7 @@ struct PlanView: View {
                 }
                 .foregroundStyle(.primary)
                 .swipeActions {
-                    Button("Удалить", role: .destructive) { store.deleteRecurring(payment.id) }
+                    Button("Удалить", role: .destructive) { Haptic.delete(); Motion.animate { store.deleteRecurring(payment.id) } }
                 }
             }
             if !suggestions.isEmpty {
@@ -255,9 +267,12 @@ struct PlanView: View {
 
     private var plannedSection: some View {
         let thisMonth = store.planned(in: store.month).reduce(Decimal(0)) { $0 + $1.amount }
+        // Оплаченные уезжают вниз, к концу списка
+        let paidIDs = Set(store.upcomingPlanned.filter { $0.isPaid(transactions: store.transactions) }.map(\.id))
+        let rows = store.upcomingPlanned.filter { !paidIDs.contains($0.id) } + store.upcomingPlanned.filter { paidIDs.contains($0.id) }
         return Section {
-            ForEach(store.upcomingPlanned) { expense in
-                let paid = expense.isPaid(transactions: store.transactions)
+            ForEach(rows) { expense in
+                let paid = paidIDs.contains(expense.id)
                 Button { editingPlanned = expense } label: {
                     HStack(spacing: 12) {
                         CategoryBadge(category: expense.category)
@@ -269,18 +284,21 @@ struct PlanView: View {
                         }
                         Spacer()
                         Text(Fmt.money(expense.amount)).foregroundStyle(.secondary)
+                            .strikethrough(paid, color: .secondary)
                         if paid {
                             Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+                                .transition(.scale.combined(with: .opacity))
                         }
                     }
                 }
                 .foregroundStyle(.primary)
+                .sensoryFeedback(.success, trigger: paid) { old, new in !old && new }
                 .swipeActions {
-                    Button("Удалить", role: .destructive) { store.deletePlanned(expense.id) }
+                    Button("Удалить", role: .destructive) { Haptic.delete(); Motion.animate { store.deletePlanned(expense.id) } }
                 }
                 .swipeActions(edge: .leading) {
                     Button(expense.done ? "Не оплачено" : "Оплачено", systemImage: "checkmark") {
-                        store.togglePlannedDone(expense.id)
+                        Motion.animate(Motion.spring) { store.togglePlannedDone(expense.id) }
                     }
                     .tint(.green)
                 }
@@ -311,7 +329,7 @@ struct PlanView: View {
             if plan.savings > 0 {
                 VStack(alignment: .leading, spacing: 6) {
                     Text("Отложено \(Fmt.money(saved)) из \(Fmt.money(plan.savings))").font(.subheadline)
-                    ProgressView(value: min((saved / plan.savings).double, 1)).tint(.green)
+                    GrowingProgress(value: min((saved / plan.savings).double, 1), tint: .green)
                 }
                 .padding(.vertical, 2)
             }
@@ -366,6 +384,13 @@ struct ActivityRings: View {
     var rings: [(Double, Color)]
 
     var body: some View {
+        // Кольца замыкаются при открытии, как в «Фитнесе»
+        Growing(value: 1) { fill in
+            drawing(fill)
+        }
+    }
+
+    private func drawing(_ fill: Double) -> some View {
         GeometryReader { geo in
             let size = min(geo.size.width, geo.size.height)
             let width = size * 0.13
@@ -376,7 +401,7 @@ struct ActivityRings: View {
                         .stroke(ring.1.opacity(0.22), lineWidth: width)
                         .padding(inset + width / 2)
                     Circle()
-                        .trim(from: 0, to: min(ring.0, 1))
+                        .trim(from: 0, to: min(ring.0, 1) * fill)
                         .stroke(ring.1.gradient, style: StrokeStyle(lineWidth: width, lineCap: .round))
                         .rotationEffect(.degrees(-90))
                         .padding(inset + width / 2)

@@ -198,6 +198,7 @@ struct AquaBarButton: View {
                 .frame(width: 34, height: 30)
                 .background(AquaGel(shape: RoundedRectangle(cornerRadius: 5), color: Aqua.barButton(scheme), shadow: false))
         }
+        .buttonStyle(AquaPress())
         .accessibilityLabel(label)
     }
 }
@@ -231,6 +232,7 @@ struct AquaBackButton: View {
                 .frame(height: 30)
                 .background(AquaGel(shape: BackArrowShape(), color: Aqua.barButton(scheme), shadow: false))
         }
+        .buttonStyle(AquaPress())
     }
 }
 
@@ -254,6 +256,17 @@ struct AquaButton: View {
             .frame(height: 46)
             .background(AquaGel(shape: Capsule(), color: color))
         }
+        .buttonStyle(AquaPress())
+    }
+}
+
+/// Нажатие в духе iOS 6: гель темнеет и чуть «вдавливается», без системного полупрозрачного мигания.
+struct AquaPress: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .brightness(configuration.isPressed ? -0.14 : 0)
+            .scaleEffect(configuration.isPressed && !Motion.reduced ? 0.97 : 1)
+            .animation(.easeOut(duration: configuration.isPressed ? 0.05 : 0.18), value: configuration.isPressed)
     }
 }
 
@@ -266,7 +279,7 @@ struct AquaSegments<T: Hashable>: View {
         ScrollView(.horizontal) {
             HStack(spacing: 6) {
                 ForEach(items, id: \.0) { value, title in
-                    Button { selection = value } label: {
+                    Button { Motion.animate(.easeOut(duration: 0.15)) { selection = value } } label: {
                         Text(title).font(Aqua.font(13, .bold))
                             .foregroundStyle(selection == value ? .white : Aqua.label)
                             .shadow(color: selection == value ? .black.opacity(0.4) : Aqua.emboss, radius: 0, x: 0, y: selection == value ? -1 : 1)
@@ -285,6 +298,8 @@ struct AquaSegments<T: Hashable>: View {
             .padding(.horizontal, 2)
             .padding(.vertical, 3)
         }
+        .buttonStyle(AquaPress())
+        .sensoryFeedback(.selection, trigger: selection)
         .scrollIndicators(.hidden)
     }
 }
@@ -297,6 +312,14 @@ struct AquaProgress: View {
     var height: CGFloat = 12
 
     var body: some View {
+        // Гель наливается при появлении и плавно следует за значением
+        Growing(value: value) { shown in
+            bar(shown)
+        }
+        .frame(height: height)
+    }
+
+    private func bar(_ value: Double) -> some View {
         GeometryReader { geo in
             ZStack(alignment: .leading) {
                 Capsule().fill(LinearGradient(colors: [Aqua.troughTop, Aqua.troughBottom],

@@ -18,6 +18,8 @@ final class AutoImporter {
     private(set) var customFolderName: String?
     private(set) var lastFile: String?
     private(set) var lastDate: Date?
+    /// Почему не удалось сменить папку — показывается под кнопкой выбора.
+    private(set) var folderError: String?
 
     @ObservationIgnored private var bookmark: Data?
 
@@ -29,7 +31,7 @@ final class AutoImporter {
         bookmark = defaults.data(forKey: Self.bookmarkKey)
         lastFile = defaults.string(forKey: Self.lastKey)
         lastDate = defaults.object(forKey: Self.lastDateKey) as? Date
-        customFolderName = resolveBookmark()?.lastPathComponent
+        customFolderName = resolveBookmark().map(Self.displayName)
         Self.ensureDefaultFolder()
     }
 
@@ -51,18 +53,36 @@ final class AutoImporter {
 
     /// Папка, выбранная в «Файлах»: запоминаем закладку, чтобы доступ сохранился после перезапуска.
     func choose(_ url: URL) {
+        // Своя папка приложения — закладка не нужна, это просто папка по умолчанию
+        if url.resolvingSymlinksInPath().path == Self.defaultFolder.resolvingSymlinksInPath().path {
+            useDefaultFolder()
+            return
+        }
         let access = url.startAccessingSecurityScopedResource()
         defer { if access { url.stopAccessingSecurityScopedResource() } }
-        guard let data = try? url.bookmarkData() else { return }
-        bookmark = data
-        UserDefaults.standard.set(data, forKey: Self.bookmarkKey)
-        customFolderName = url.lastPathComponent
-        enabled = true
+        // Проверяем, что папку действительно можно прочитать, иначе молча осталась бы старая
+        do {
+            _ = try FileManager.default.contentsOfDirectory(at: url, includingPropertiesForKeys: nil)
+            let data = try url.bookmarkData(options: .minimalBookmark, includingResourceValuesForKeys: nil, relativeTo: nil)
+            bookmark = data
+            UserDefaults.standard.set(data, forKey: Self.bookmarkKey)
+            customFolderName = Self.displayName(url)
+            folderError = nil
+            enabled = true
+        } catch {
+            folderError = "Не удалось открыть доступ к папке «\(url.lastPathComponent)». Выберите другую."
+        }
+    }
+
+    /// Имя, как в «Файлах»: папка Documents приложения там называется «iMoney».
+    private static func displayName(_ url: URL) -> String {
+        (try? url.resourceValues(forKeys: [.localizedNameKey]).localizedName) ?? url.lastPathComponent
     }
 
     func useDefaultFolder() {
         bookmark = nil
         customFolderName = nil
+        folderError = nil
         UserDefaults.standard.removeObject(forKey: Self.bookmarkKey)
     }
 

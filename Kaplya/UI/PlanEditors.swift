@@ -312,6 +312,7 @@ struct SuggestedPaymentsSheet: View {
                 if suggestions.isEmpty {
                     ContentUnavailableView("Все добавлены", systemImage: "checkmark.circle",
                                            description: Text("Новых регулярных платежей в выписках нет."))
+                        .emptyStateSymbol()
                 }
             }
             .navigationTitle("Найдено в выписках")

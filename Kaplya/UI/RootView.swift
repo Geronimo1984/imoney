@@ -66,17 +66,45 @@ extension Category {
     }
 }
 
+extension Category {
+    /// Похожие оттенки — одна группа: рядом на графике их не различить.
+    private static let hueFamily: [Color: Int] = [
+        .green: 0, .mint: 0, .teal: 2, .cyan: 2, .blue: 2, .indigo: 2, .red: 3, .pink: 3,
+        .purple: 4, .orange: 5, .yellow: 6, .brown: 7, .gray: 8,
+    ]
+    private static let spareColors: [Color] = [.blue, .orange, .green, .purple, .red, .yellow, .brown]
+
+    /// Цвета для графика: категория сохраняет свой цвет, если он не похож на цвет категории выше,
+    /// иначе получает свободный. Серый оставлен для «Другое».
+    static func distinctColors(_ categories: [Category]) -> [Category: Color] {
+        var used: Set<Int> = [8]
+        var result: [Category: Color] = [:]
+        for category in categories {
+            var color = category.systemColor
+            if used.contains(hueFamily[color] ?? 8) {
+                color = spareColors.first { !used.contains(hueFamily[$0] ?? 8) } ?? color
+            }
+            used.insert(hueFamily[color] ?? 8)
+            result[category] = color
+        }
+        return result
+    }
+}
+
 /// Значок категории как в Настройках: белый символ на цветном скруглённом квадрате.
 struct CategoryBadge: View {
     var category: Category
     var size: CGFloat = 30
+    var color: Color?
 
     var body: some View {
         Image(systemName: category.symbol)
+            // Смена категории: значок сменяется системной анимацией, цвет перетекает
+            .contentTransition(.symbolEffect(.replace))
             .font(.system(size: size * 0.5, weight: .semibold))
             .foregroundStyle(.white)
             .frame(width: size, height: size)
-            .background(category.systemColor.gradient, in: RoundedRectangle(cornerRadius: size * 0.24, style: .continuous))
+            .background((color ?? category.systemColor).gradient, in: RoundedRectangle(cornerRadius: size * 0.24, style: .continuous))
     }
 }
 

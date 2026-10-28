@@ -46,7 +46,7 @@ final class TapTests: XCTestCase {
             .appendingPathComponent("examples/Пример — операции Т-Банка.csv").path
         let app = launch(["-import=" + sample])
         XCTAssertTrue(app.navigationBars["Выписка загружена"].waitForExistence(timeout: 4))
-        XCTAssertTrue(app.staticTexts["Добавлено 40 операций"].exists)
+        XCTAssertTrue(app.staticTexts["Добавлено 40 операций"].waitForExistence(timeout: 3))
         app.buttons["Готово"].tap()
         XCTAssertFalse(app.navigationBars["Выписка загружена"].waitForExistence(timeout: 1))
     }
@@ -231,6 +231,25 @@ final class TapTests: XCTestCase {
             try? XCUIScreen.main.screenshot().pngRepresentation.write(to: URL(fileURLWithPath: dir + "folder_picker.png"))
         }
         XCTAssertTrue(opened, "Не открылся выбор папки")
+
+        // Уровнем выше — папка приложения «iMoney»; выбираем её
+        let back = app.buttons.matching(NSPredicate(format: "label IN %@", ["Back", "Назад", "iMoney"])).firstMatch
+        if back.waitForExistence(timeout: 5) { back.tap() }
+        sleep(2)
+        openButton.tap()
+        let reset = app.buttons["Вернуть папку iMoney"]
+        XCTAssertTrue(reset.waitForExistence(timeout: 10), "Папка не сменилась после выбора")
+
+        // Выбор открывается и второй раз — раньше «зависший» лист не давал открыть его снова
+        choose.tap()
+        XCTAssertTrue(openButton.waitForExistence(timeout: 15), "Выбор папки не открылся повторно")
+        // Второй раз выбор открывается в «Выписках»: выбрать её — значит вернуть папку по умолчанию
+        openButton.tap()
+        // Строка «Папка» — один элемент с подписью и значением
+        let folder = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "label CONTAINS %@ OR value CONTAINS %@", "iMoney › Выписки", "iMoney › Выписки")).firstMatch
+        XCTAssertTrue(folder.waitForExistence(timeout: 10), "Папка по умолчанию не вернулась")
+        XCTAssertFalse(reset.exists)
     }
 
     func testAddPlannedExpense() {
@@ -264,5 +283,36 @@ final class TapTests: XCTestCase {
         for _ in 0..<3 where !year.exists { app.swipeUp() }
         XCTAssertTrue(year.exists, "«Полезное» не пересчиталось за год")
         shot(app, "summary_year")
+    }
+
+    func testSummaryYearChart() {
+        let app = launch([])
+        app.buttons["Год"].tap()
+        sleep(1)
+        shot(app, "summary_year_chart")
+        app.swipeUp()
+        shot(app, "summary_year_categories")
+    }
+
+    func testAccountCardSelect() {
+        let app = launch([])
+        app.tabBars.buttons["Счета"].tap()
+        let sber = app.buttons["Сбер"].firstMatch
+        XCTAssertTrue(sber.waitForExistence(timeout: 5))
+        sber.tap()
+        let opened = app.staticTexts["Пришло"].waitForExistence(timeout: 5)
+        if !opened { shot(app, "account_fail") }
+        XCTAssertTrue(opened, "Счёт не раскрылся")
+        sleep(1)
+        shot(app, "account_selected")
+        let all = app.buttons["Все операции"]
+        XCTAssertTrue(all.exists, "Нет ссылки на все операции счёта")
+        all.tap()
+        XCTAssertTrue(app.navigationBars["Сбер"].waitForExistence(timeout: 3), "Экран счёта не открылся")
+        app.navigationBars.buttons.firstMatch.tap()
+        sber.tap()
+        sleep(1)
+        XCTAssertFalse(app.staticTexts["Пришло"].exists, "Стопка не вернулась")
+        shot(app, "account_stack")
     }
 }

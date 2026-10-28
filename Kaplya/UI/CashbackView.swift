@@ -10,6 +10,7 @@ struct CashbackView: View {
             if report.history.isEmpty {
                 ContentUnavailableView("Кэшбэка пока нет", systemImage: "arrow.uturn.backward.circle",
                                        description: Text("Начисления кэшбэка и процентов появятся здесь, когда они будут в загруженных выписках."))
+                    .emptyStateSymbol()
             } else {
                 Section {
                     VStack(alignment: .leading, spacing: 4) {

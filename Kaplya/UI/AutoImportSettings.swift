@@ -4,7 +4,6 @@ import UniformTypeIdentifiers
 /// Раздел «Автозагрузка» для системного оформления: переключатель, папка, последний файл.
 struct AutoImportSection: View {
     @Environment(AutoImporter.self) private var auto
-    @State private var picking = false
 
     var body: some View {
         @Bindable var auto = auto
@@ -14,11 +13,10 @@ struct AutoImportSection: View {
             }
             if auto.enabled {
                 LabeledContent("Папка", value: auto.folderTitle)
-                Button("Выбрать другую папку…") { picking = true }
-                    // Лист на самой кнопке: повешенный на Section внутри List не открывается
-                    .sheet(isPresented: $picking) {
-                        FolderPicker { auto.choose($0) }.ignoresSafeArea()
-                    }
+                Button("Выбрать другую папку…") { FolderPicker.present { auto.choose($0) } }
+                if let error = auto.folderError {
+                    Text(error).font(.footnote).foregroundStyle(.red)
+                }
                 if auto.customFolderName != nil {
                     Button("Вернуть папку iMoney") { auto.useDefaultFolder() }
                 }
@@ -40,7 +38,6 @@ struct AutoImportSection: View {
 /// То же для глянцевого оформления.
 struct AquaAutoImportCard: View {
     @Environment(AutoImporter.self) private var auto
-    @State private var picking = false
 
     var body: some View {
         @Bindable var auto = auto
@@ -58,10 +55,13 @@ struct AquaAutoImportCard: View {
                 }
                 .padding(12)
                 Divider().overlay(Aqua.line)
-                Button { picking = true } label: {
+                Button { FolderPicker.present { auto.choose($0) } } label: {
                     Text("Выбрать другую папку…").font(Aqua.font(15, .bold)).foregroundStyle(Aqua.link)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(12)
+                }
+                if let error = auto.folderError {
+                    Text(error).font(Aqua.font(12)).foregroundStyle(.red).padding(.horizontal, 12).padding(.bottom, 10)
                 }
                 if auto.customFolderName != nil {
                     Divider().overlay(Aqua.line)
@@ -78,35 +78,45 @@ struct AquaAutoImportCard: View {
             }
         }
         .groupCard()
-        .sheet(isPresented: $picking) {
-            FolderPicker { auto.choose($0) }.ignoresSafeArea()
-        }
     }
 }
 
-/// Выбор папки в «Файлах». Не fileImporter: экран выше уже держит свой для выписок,
-/// а SwiftUI показывает только один из вложенных — кнопка выбора папки молча не срабатывала.
-struct FolderPicker: UIViewControllerRepresentable {
-    var onPick: (URL) -> Void
+/// Выбор папки в «Файлах». Показывается напрямую через UIKit поверх верхнего экрана:
+/// внутри SwiftUI-листа выборщик после выбора закрывался сам, в обход SwiftUI, —
+/// лист «оставался открытым», кнопка переставала срабатывать, а на устройстве приложение иногда падало.
+/// Не fileImporter: экран выше уже держит свой для выписок, а SwiftUI показывает только один из вложенных.
+@MainActor
+enum FolderPicker {
+    /// Делегат выборщика слабый — держим его, пока окно открыто.
+    private static var delegate: Delegate?
 
-    func makeUIViewController(context: Context) -> UIDocumentPickerViewController {
+    static func present(onPick: @escaping (URL) -> Void) {
+        let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+        guard let root = (scenes.first { $0.activationState == .foregroundActive } ?? scenes.first)?
+            .windows.first(where: \.isKeyWindow)?.rootViewController else { return }
+        var top = root
+        while let presented = top.presentedViewController, !presented.isBeingDismissed { top = presented }
+
         let picker = UIDocumentPickerViewController(forOpeningContentTypes: [.folder])
         picker.allowsMultipleSelection = false
         picker.directoryURL = AutoImporter.defaultFolder
-        picker.delegate = context.coordinator
-        return picker
+        let delegate = Delegate(onPick: onPick)
+        picker.delegate = delegate
+        Self.delegate = delegate
+        top.present(picker, animated: true)
     }
 
-    func updateUIViewController(_ controller: UIDocumentPickerViewController, context: Context) {}
-
-    func makeCoordinator() -> Coordinator { Coordinator(onPick: onPick) }
-
-    final class Coordinator: NSObject, UIDocumentPickerDelegate {
+    final class Delegate: NSObject, UIDocumentPickerDelegate {
         let onPick: (URL) -> Void
         init(onPick: @escaping (URL) -> Void) { self.onPick = onPick }
 
         func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
             if let url = urls.first { onPick(url) }
+            FolderPicker.delegate = nil
+        }
+
+        func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {
+            FolderPicker.delegate = nil
         }
     }
 }

@@ -63,11 +63,12 @@ struct AquaOverview: View {
                             AquaWheel(totals: stats.byCategory, total: stats.expenses) { opened = $0 }
                                 .padding(.horizontal, 8)
                             AquaSection(title: "Категории") {
+                                let colors = Category.distinctColors(stats.byCategory.prefix(7).map(\.category))
                                 VStack(spacing: 0) {
                                     ForEach(Array(stats.byCategory.prefix(6).enumerated()), id: \.element.id) { index, item in
                                         Button { opened = item.category } label: {
                                             HStack(spacing: 10) {
-                                                AquaIcon(symbol: item.category.symbol, color: item.category.systemColor, size: 30)
+                                                AquaIcon(symbol: item.category.symbol, color: colors[item.category] ?? item.category.systemColor, size: 30)
                                                 VStack(alignment: .leading, spacing: 5) {
                                                     HStack {
                                                         Text(item.category.title).font(Aqua.font(15, .bold)).foregroundStyle(Aqua.text)
@@ -75,7 +76,7 @@ struct AquaOverview: View {
                                                         Text(Fmt.money(item.amount)).font(Aqua.font(15)).foregroundStyle(Aqua.link)
                                                     }
                                                     AquaProgress(value: (item.amount / (stats.byCategory.first?.amount ?? 1)).double,
-                                                                 color: item.category.systemColor, height: 9)
+                                                                 color: colors[item.category] ?? item.category.systemColor, height: 9)
                                                 }
                                                 Image(systemName: "chevron.right").font(.system(size: 13, weight: .bold)).foregroundStyle(Aqua.line)
                                             }
@@ -193,9 +194,12 @@ struct AquaWheel: View {
     var total: Decimal
     var onOpen: (Category) -> Void
     @State private var selected: Category?
+    /// При появлении колесо докручивается на место, как барабан в iOS 6
+    @State private var spun = false
 
     var body: some View {
         let top = Array(totals.prefix(7))
+        let colors = Category.distinctColors(top.map(\.category))
         let raw = top.map { max(($0.amount / total).double * 360, 14) }
         let scale = 360 / raw.reduce(0, +)
         let starts = raw.indices.map { i in -90 + raw[..<i].reduce(0, +) * scale }
@@ -211,12 +215,12 @@ struct AquaWheel: View {
                     let isOn = item.category == selected
                     let wedge = WheelWedge(start: a0, end: a1)
                     Button {
-                        withAnimation(.spring(response: 0.3, dampingFraction: 0.6)) {
+                        Motion.animate(.spring(response: 0.3, dampingFraction: 0.6)) {
                             if isOn { onOpen(item.category) } else { selected = item.category }
                         }
                     } label: {
                         ZStack {
-                            AquaGel(shape: wedge, color: item.category.systemColor)
+                            AquaGel(shape: wedge, color: colors[item.category] ?? item.category.systemColor)
                             VStack(spacing: 2) {
                                 Image(systemName: item.category.symbol).font(.system(size: 18, weight: .bold))
                                 if raw[i] * scale >= 30 {
@@ -234,11 +238,16 @@ struct AquaWheel: View {
                     .offset(x: isOn ? 7 * CGFloat(cos(mid)) : 0, y: isOn ? 7 * CGFloat(sin(mid)) : 0)
                     .accessibilityLabel(item.category.title)
                 }
+                // Каждый сектор размером с колесо, поэтому все крутятся вокруг общего центра
+                .rotationEffect(.degrees(spun ? 0 : -140))
+                .scaleEffect(spun ? 1 : 0.75)
+                .opacity(spun ? 1 : 0)
                 // Хромированная середина
                 VStack(spacing: 2) {
                     Text(current?.category.title ?? "Расходы").font(Aqua.font(12, .bold)).foregroundStyle(Aqua.label)
                         .lineLimit(1).minimumScaleFactor(0.7)
                     Text(Fmt.compact(current?.amount ?? total)).font(Aqua.font(22, .bold)).foregroundStyle(Aqua.text)
+                        .contentTransition(.numericText())
                         .lineLimit(1).minimumScaleFactor(0.6)
                     Text(current.map { Fmt.percent($0.amount, of: total) + " · ещё раз — подробнее" } ?? "нажмите на сектор")
                         .font(Aqua.font(10)).foregroundStyle(Aqua.label)
@@ -252,6 +261,11 @@ struct AquaWheel: View {
             .position(x: geo.size.width / 2, y: geo.size.height / 2)
         }
         .aspectRatio(1, contentMode: .fit)
+        .sensoryFeedback(.selection, trigger: selected)
+        .onAppear {
+            guard !spun else { return }
+            Motion.animate(.spring(response: 0.9, dampingFraction: 0.68)) { spun = true }
+        }
     }
 }
 

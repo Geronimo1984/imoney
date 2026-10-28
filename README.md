@@ -66,7 +66,7 @@ iMoney собирает выписки Т-Банка и Сбера в одну �
 xcodebuild -project Kaplya.xcodeproj -scheme Kaplya -sdk iphonesimulator -derivedDataPath build build
 ```
 
-Тесты интерфейса (19 сценариев):
+Тесты интерфейса (21 сценарий):
 
 ```bash
 xcodebuild test -project Kaplya.xcodeproj -scheme Kaplya -destination 'platform=iOS Simulator,name=iPhone 16 Pro'

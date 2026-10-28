@@ -67,11 +67,14 @@ struct OperationsView: View {
                 }
             }
             .listStyle(.insetGrouped)
+            // Операция сменила категорию и ушла из фильтра, или поиск сузил список — строки уезжают плавно
+            .motion(value: items.map(\.id))
             .overlay {
                 if days.isEmpty {
                     if store.transactions.isEmpty {
                         ContentUnavailableView("Нет операций", systemImage: "tray",
                                                description: Text("Загрузите выписку на вкладке «Счета»."))
+                            .emptyStateSymbol()
                     } else {
                         ContentUnavailableView.search(text: query)
                     }
@@ -82,7 +85,7 @@ struct OperationsView: View {
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Menu {
-                        Picker("Показать", selection: $filter) {
+                        Picker("Показать", selection: $filter.animation(Motion.reduced ? nil : Motion.standard)) {
                             ForEach(OperationFilter.allCases) { Text($0.title).tag($0) }
                         }
                     } label: {
@@ -117,6 +120,7 @@ struct TransactionDetail: View {
                 Section {
                     VStack(spacing: 10) {
                         CategoryBadge(category: t.category, size: 64)
+                            .motion(Motion.spring, value: t.category)
                         Text(Fmt.exact(t.amount, sign: t.amount > 0))
                             .font(.system(size: 40, weight: .bold, design: .rounded))
                         Text(t.title).font(.headline).multilineTextAlignment(.center)
@@ -194,7 +198,8 @@ struct CategoryPicker: View {
 
     private func row(_ c: Category, current: Category?) -> some View {
         Button {
-            store.setCategory(c, for: id, remember: store.rules.contains { $0.match == store.transactions.first { $0.id == id }?.counterparty })
+            let remember = store.rules.contains { $0.match == store.transactions.first { $0.id == id }?.counterparty }
+            Motion.animate { store.setCategory(c, for: id, remember: remember) }
             if closeOnPick { dismiss() }
         } label: {
             HStack(spacing: 12) {
@@ -203,6 +208,7 @@ struct CategoryPicker: View {
                 Spacer()
                 if c == current {
                     Image(systemName: "checkmark").font(.body.weight(.semibold)).foregroundStyle(.tint)
+                        .transition(.scale.combined(with: .opacity))
                 }
             }
         }
